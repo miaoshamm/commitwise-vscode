@@ -1,0 +1,559 @@
+{
+  "name": "commit-craft",
+  "displayName": "CommitCraft",
+  "description": "读取 Git 暂存区 diff，用你自己的大模型（DeepSeek / OpenAI / Claude / Ollama）生成规范 commit 信息，并顺带做代码审查、把问题标到具体行。密钥本地加密存储，绝不自动提交。",
+  "version": "0.4.0",
+  "publisher": "commitcraft",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "SCM Providers",
+    "Machine Learning",
+    "Linters"
+  ],
+  "keywords": [
+    "git",
+    "commit",
+    "commit message",
+    "commitlint",
+    "conventional commits",
+    "ai",
+    "llm",
+    "code review",
+    "pre-commit",
+    "staged changes",
+    "openai",
+    "deepseek",
+    "ollama",
+    "claude"
+  ],
+  "icon": "media/icon.png",
+  "galleryBanner": {
+    "color": "#C2402C",
+    "theme": "dark"
+  },
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onStartupFinished",
+    "onView:commitCraft.reviewIssues"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "commitCraft",
+          "title": "CommitCraft",
+          "icon": "media/activity.svg"
+        }
+      ]
+    },
+    "views": {
+      "commitCraft": [
+        {
+          "id": "commitCraft.reviewIssues",
+          "name": "审查问题",
+          "icon": "media/activity.svg",
+          "contextualTitle": "CommitCraft 审查问题"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "commitCraft.reviewIssues",
+        "contents": "还没有审查结果。\n运行「审查暂存区代码」后，问题会按文件列在这里，点击可直接跳到对应行。\n[审查暂存区代码](command:commitCraft.reviewStagedChanges)\n[打开设置页面](command:commitCraft.openSettings)\n[快速配置模型](command:commitCraft.quickSetup)",
+        "when": "!commitCraft.hasReview"
+      }
+    ],
+    "commands": [
+      {
+        "command": "commitCraft.generateCommitMessage",
+        "title": "生成提交信息",
+        "category": "CommitCraft",
+        "icon": "$(sparkle)"
+      },
+      {
+        "command": "commitCraft.generateWithTemplate",
+        "title": "用指定模板生成提交信息",
+        "category": "CommitCraft",
+        "icon": "$(symbol-snippet)"
+      },
+      {
+        "command": "commitCraft.reviewStagedChanges",
+        "title": "审查暂存区代码",
+        "category": "CommitCraft",
+        "icon": "$(checklist)"
+      },
+      {
+        "command": "commitCraft.showReviewReport",
+        "title": "打开审查报告",
+        "category": "CommitCraft",
+        "icon": "$(preview)"
+      },
+      {
+        "command": "commitCraft.copyReviewMarkdown",
+        "title": "复制审查报告为 Markdown",
+        "category": "CommitCraft",
+        "icon": "$(copy)"
+      },
+      {
+        "command": "commitCraft.clearReview",
+        "title": "清空审查结果",
+        "category": "CommitCraft",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "commitCraft.revealReviewView",
+        "title": "在侧边栏查看审查问题",
+        "category": "CommitCraft",
+        "icon": "$(list-tree)"
+      },
+      {
+        "command": "commitCraft.goToIssue",
+        "title": "跳转到问题所在行",
+        "category": "CommitCraft",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "commitCraft.quickSetup",
+        "title": "快速配置模型",
+        "category": "CommitCraft",
+        "icon": "$(rocket)"
+      },
+      {
+        "command": "commitCraft.selectModel",
+        "title": "选择模型",
+        "category": "CommitCraft",
+        "icon": "$(chip)"
+      },
+      {
+        "command": "commitCraft.refreshModels",
+        "title": "刷新可用模型列表",
+        "category": "CommitCraft",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "commitCraft.setApiKey",
+        "title": "设置 API 密钥",
+        "category": "CommitCraft",
+        "icon": "$(key)"
+      },
+      {
+        "command": "commitCraft.clearApiKey",
+        "title": "清除 API 密钥",
+        "category": "CommitCraft",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "commitCraft.testConnection",
+        "title": "测试模型连接",
+        "category": "CommitCraft",
+        "icon": "$(plug)"
+      },
+      {
+        "command": "commitCraft.cancelRequest",
+        "title": "取消当前请求",
+        "category": "CommitCraft",
+        "icon": "$(stop-circle)"
+      },
+      {
+        "command": "commitCraft.restoreDraft",
+        "title": "恢复提交信息草稿",
+        "category": "CommitCraft",
+        "icon": "$(history)"
+      },
+      {
+        "command": "commitCraft.openSettings",
+        "title": "打开设置页面",
+        "category": "CommitCraft",
+        "icon": "$(settings-gear)"
+      },
+      {
+        "command": "commitCraft.openNativeSettings",
+        "title": "在 settings.json 中编辑",
+        "category": "CommitCraft",
+        "icon": "$(json)"
+      },
+      {
+        "command": "commitCraft.showOutput",
+        "title": "显示日志",
+        "category": "CommitCraft",
+        "icon": "$(output)"
+      },
+      {
+        "command": "commitCraft.clearDiagnostics",
+        "title": "清除审查标记",
+        "category": "CommitCraft",
+        "icon": "$(eye-closed)"
+      }
+    ],
+    "menus": {
+      "scm/title": [
+        {
+          "command": "commitCraft.generateCommitMessage",
+          "group": "navigation@1",
+          "when": "scmProvider == git"
+        },
+        {
+          "command": "commitCraft.reviewStagedChanges",
+          "group": "navigation@2",
+          "when": "scmProvider == git"
+        },
+        {
+          "command": "commitCraft.showReviewReport",
+          "group": "navigation@3",
+          "when": "scmProvider == git"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "commitCraft.showReviewReport",
+          "group": "navigation@1",
+          "when": "view == commitCraft.reviewIssues"
+        },
+        {
+          "command": "commitCraft.copyReviewMarkdown",
+          "group": "navigation@2",
+          "when": "view == commitCraft.reviewIssues"
+        },
+        {
+          "command": "commitCraft.reviewStagedChanges",
+          "group": "navigation@3",
+          "when": "view == commitCraft.reviewIssues"
+        },
+        {
+          "command": "commitCraft.clearReview",
+          "group": "1_clear@1",
+          "when": "view == commitCraft.reviewIssues"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "commitCraft.goToIssue",
+          "group": "inline",
+          "when": "view == commitCraft.reviewIssues && viewItem =~ /commitCraft.issue/"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "commitCraft.goToIssue",
+          "when": "false"
+        },
+        {
+          "command": "commitCraft.cancelRequest",
+          "when": "commitCraft.requesting"
+        },
+        {
+          "command": "commitCraft.restoreDraft",
+          "when": "commitCraft.hasDraftBackup"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "commitCraft.generateCommitMessage",
+        "key": "ctrl+alt+g",
+        "mac": "cmd+alt+g",
+        "when": "!commitCraft.requesting"
+      },
+      {
+        "command": "commitCraft.reviewStagedChanges",
+        "key": "ctrl+alt+r",
+        "mac": "cmd+alt+r",
+        "when": "!commitCraft.requesting"
+      }
+    ],
+    "configuration": {
+      "title": "CommitCraft",
+      "properties": {
+        "commitCraft.provider": {
+          "type": "string",
+          "enum": [
+            "openai-compatible",
+            "anthropic",
+            "azure-openai",
+            "ollama"
+          ],
+          "enumDescriptions": [
+            "OpenAI 兼容接口（OpenAI / DeepSeek / Qwen / Moonshot / 自建网关）",
+            "Anthropic Claude 官方接口",
+            "Azure OpenAI（deployment 名称即模型名）",
+            "本地 Ollama（无需密钥）"
+          ],
+          "default": "openai-compatible",
+          "scope": "window",
+          "markdownDescription": "模型服务商类型。\n\n不确定怎么配时运行「CommitCraft: 快速配置模型」，会带着地址和默认模型一起设好。"
+        },
+        "commitCraft.baseUrl": {
+          "type": "string",
+          "default": "https://api.openai.com/v1",
+          "scope": "window",
+          "markdownDescription": "接口地址。常见取值：\n\n- OpenAI `https://api.openai.com/v1`\n- DeepSeek `https://api.deepseek.com/v1`\n- 通义千问 `https://dashscope.aliyuncs.com/compatible-mode/v1`\n- Ollama `http://localhost:11434`\n\n使用非 `localhost` 的 `http://` 地址时，请求内容会明文传输。"
+        },
+        "commitCraft.model": {
+          "type": "string",
+          "default": "gpt-4o-mini",
+          "scope": "window",
+          "markdownDescription": "模型名称（Azure 场景填 deployment 名称）。\n\n- 留空则自动使用所配服务商的**推荐默认模型**，并在执行时给出提示。\n- 不知道填什么时，运行「CommitCraft: 选择模型」，插件会**自动从接口获取可用模型列表**供你挑。"
+        },
+        "commitCraft.availableModels": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "scope": "window",
+          "markdownDescription": "**通常不需要手动填写**：运行「选择模型」时会自动从接口获取可用模型并缓存。\n\n这里只用于补充接口没有返回、但你希望出现在列表里的模型。"
+        },
+        "commitCraft.autoFetchModels": {
+          "type": "boolean",
+          "default": true,
+          "scope": "window",
+          "markdownDescription": "打开「选择模型」时，若本地没有缓存则自动调用服务商的 `/models` 接口获取模型列表。\n\n关闭后只显示缓存与手动填写的候选（适合内网禁用该接口的环境）。"
+        },
+        "commitCraft.temperature": {
+          "type": "number",
+          "default": 0.2,
+          "minimum": 0,
+          "maximum": 2,
+          "scope": "window",
+          "description": "采样温度，生成提交信息建议 0.1–0.3"
+        },
+        "commitCraft.maxTokens": {
+          "type": "number",
+          "default": 1024,
+          "minimum": 64,
+          "scope": "window",
+          "description": "单次响应的最大 token 数，代码审查建议 2048 以上"
+        },
+        "commitCraft.requestTimeoutMs": {
+          "type": "number",
+          "default": 60000,
+          "minimum": 5000,
+          "scope": "window",
+          "description": "请求超时时间（毫秒）"
+        },
+        "commitCraft.maxRetries": {
+          "type": "number",
+          "default": 1,
+          "minimum": 0,
+          "maximum": 5,
+          "scope": "window",
+          "markdownDescription": "遇到 429 / 5xx / 网络错误时的重试次数。已开始输出内容后不再重试。"
+        },
+        "commitCraft.apiKeyEnv": {
+          "type": "string",
+          "default": "",
+          "scope": "window",
+          "markdownDescription": "从此环境变量读取 API 密钥，优先于密钥库。留空则使用密钥库中的值。"
+        },
+        "commitCraft.commit.format": {
+          "type": "string",
+          "enum": [
+            "conventional",
+            "angular",
+            "gitmoji",
+            "plain",
+            "custom"
+          ],
+          "default": "conventional",
+          "scope": "window",
+          "description": "提交信息格式"
+        },
+        "commitCraft.commit.language": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "zh-CN",
+            "en"
+          ],
+          "default": "auto",
+          "scope": "window",
+          "description": "提交信息语言，auto 跟随 VSCode 显示语言"
+        },
+        "commitCraft.commit.templateId": {
+          "type": "string",
+          "default": "builtin-conventional-zh",
+          "scope": "resource",
+          "description": "生成提交信息所用的提示词模板 ID"
+        },
+        "commitCraft.commit.maxSubjectLength": {
+          "type": "number",
+          "default": 72,
+          "minimum": 20,
+          "scope": "window",
+          "description": "提交信息首行最大长度"
+        },
+        "commitCraft.commit.includeBody": {
+          "type": "boolean",
+          "default": true,
+          "scope": "window",
+          "description": "是否生成多行正文"
+        },
+        "commitCraft.commit.recentCommitCount": {
+          "type": "number",
+          "default": 5,
+          "minimum": 0,
+          "maximum": 20,
+          "scope": "window",
+          "description": "作为风格参考的最近提交条数"
+        },
+        "commitCraft.commit.confirmBeforeInsert": {
+          "type": "boolean",
+          "default": false,
+          "scope": "window",
+          "description": "写入源代码管理输入框前先预览确认"
+        },
+        "commitCraft.diff.maxTotalChars": {
+          "type": "number",
+          "default": 48000,
+          "minimum": 4000,
+          "scope": "window",
+          "description": "发送给模型的最大字符数"
+        },
+        "commitCraft.diff.maxFileChars": {
+          "type": "number",
+          "default": 20000,
+          "minimum": 2000,
+          "scope": "window",
+          "description": "单个文件 diff 的最大字符数，超出则截断"
+        },
+        "commitCraft.diff.excludeGlobs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "**/package-lock.json",
+            "**/yarn.lock",
+            "**/pnpm-lock.yaml",
+            "**/*.min.js",
+            "**/*.min.css",
+            "**/*.map",
+            "**/dist/**",
+            "**/build/**",
+            "**/*.snap",
+            "**/*.svg"
+          ],
+          "scope": "resource",
+          "markdownDescription": "不发送给模型的变更文件（仍会出现在文件列表中）"
+        },
+        "commitCraft.diff.redactSecrets": {
+          "type": "boolean",
+          "default": true,
+          "scope": "window",
+          "description": "发送前对疑似密钥、令牌做脱敏处理"
+        },
+        "commitCraft.review.templateId": {
+          "type": "string",
+          "default": "builtin-review-standard",
+          "scope": "resource",
+          "description": "代码审查所用的提示词模板 ID"
+        },
+        "commitCraft.review.minSeverity": {
+          "type": "string",
+          "enum": [
+            "high",
+            "medium",
+            "low"
+          ],
+          "default": "low",
+          "scope": "window",
+          "description": "报告中展示的最低问题级别"
+        },
+        "commitCraft.review.maxIssues": {
+          "type": "number",
+          "default": 30,
+          "minimum": 1,
+          "scope": "window",
+          "description": "最多展示的问题条数"
+        },
+        "commitCraft.review.showDiagnostics": {
+          "type": "boolean",
+          "default": true,
+          "scope": "window",
+          "description": "在编辑器中对问题行显示波浪线"
+        },
+        "commitCraft.customTemplates": {
+          "type": "array",
+          "default": [],
+          "scope": "resource",
+          "markdownDescription": "自定义提示词模板。可写入 `.vscode/settings.json` 随仓库共享。字段：`id`、`type`(`commit`|`review`)、`name`、`systemPrompt`、`userPrompt`，`userPrompt` 必须包含 `{{diff}}`。",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "type",
+              "name",
+              "userPrompt"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "commit",
+                  "review"
+                ]
+              },
+              "name": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "systemPrompt": {
+                "type": "string"
+              },
+              "userPrompt": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "commitCraft.telemetry.enabled": {
+          "type": "boolean",
+          "default": false,
+          "scope": "window",
+          "description": "允许匿名的命令调用与成功率统计（默认关闭，当前版本未实现上报）"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p . --noEmit",
+    "build": "node esbuild.js",
+    "watch": "node esbuild.js --watch",
+    "test": "vitest run",
+    "test:unit": "vitest run --exclude test/integration-git.test.ts",
+    "test:git": "vitest run test/integration-git.test.ts",
+    "test:watch": "vitest",
+    "smoke": "node scripts/smoke-activate.js",
+    "e2e": "node scripts/e2e-generate.js && node scripts/e2e-review.js && node scripts/e2e-models.js && node scripts/e2e-settings.js",
+    "check:icons": "node scripts/check-icons.js",
+    "verify": "npm run check:icons && npm run compile && npm run test:unit && npm run build && npm run smoke && npm run e2e",
+    "icon": "python scripts/export-icon.py",
+    "vscode:prepublish": "node esbuild.js --production",
+    "package": "npm run build && vsce package --no-dependencies --allow-missing-repository",
+    "preview:settings": "node scripts/e2e-settings.js --preview",
+    "icons:providers": "node scripts/fetch-provider-icons.js",
+    "preflight": "node scripts/publish.js --check",
+    "release:dry": "node scripts/publish.js --dry-run",
+    "release:pre": "node scripts/publish.js --pre-release",
+    "release": "node scripts/publish.js",
+    "release:vsix": "node scripts/publish.js --target vsix"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/vscode": "1.90.0",
+    "@vscode/vsce": "^4.0.0",
+    "esbuild": "^0.23.0",
+    "jsdom": "^30.1.3",
+    "ovsx": "^1.3.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  }
+}

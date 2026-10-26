@@ -1,0 +1,21 @@
+.vscode/**
+.vscode-test/**
+src/**
+test/**
+scripts/**
+node_modules/**
+coverage/**
+IMPLEMENTATION-STATUS.md
+dist/**/*.map
+esbuild.js
+tsconfig.json
+vitest.config.ts
+.gitignore
+**/*.ts
+*.vsix
+!dist/**/*.js
+# 图标设计稿只用于导出 media/icon.png，运行时不需要，别塞进包里
+media/icon-source.jpg
+media/_preview_*.png
+# 设置页的静态预览是评审用产物，不随扩展分发
+preview/**
