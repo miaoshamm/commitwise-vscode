@@ -663,6 +663,48 @@ svg { width: 14px; height: 14px; flex: none; }
 .revert:hover { color: var(--vscode-foreground); background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,.2)); }
 .revert svg { width: 12px; height: 12px; }
 
+/* 模型选择：输入框 + 可点击展开的列表。
+   <input list=...> + <datalist> 在 webview 里没有箭头、要打字才提示，
+   用户根本不知道能选，所以这里自绘一个 combobox。 */
+.combo { position: relative; flex: 1 1 240px; max-width: 360px; min-width: 0; display: flex; }
+.combo input[type=text] { padding-right: 30px; }
+.combo-toggle {
+  position: absolute; right: 1px; top: 1px; bottom: 1px; width: 26px; padding: 0;
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
+  border: none; border-radius: 0 5px 5px 0; background: transparent;
+  color: var(--vscode-descriptionForeground);
+}
+.combo-toggle:hover { color: var(--vscode-foreground); background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,.18)); }
+.combo-toggle:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: -1px; }
+.combo-toggle svg { width: 11px; height: 11px; }
+.combo.is-open .combo-toggle { color: var(--vscode-foreground); }
+.combo-pop {
+  position: absolute; z-index: 30; left: 0; right: 0; top: calc(100% + 4px);
+  max-height: 236px; overflow-y: auto; padding: 4px;
+  border-radius: 8px;
+  border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border, rgba(128,128,128,.35)));
+  background: var(--vscode-dropdown-background, var(--vscode-editorWidget-background, #252526));
+  box-shadow: 0 8px 22px rgba(0,0,0,.26);
+}
+.combo-pop[hidden] { display: none; }
+.combo-item {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 6px 8px; border: none; border-radius: 5px;
+  background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer;
+}
+.combo-item:hover, .combo-item.active { background: var(--vscode-list-hoverBackground, rgba(128,128,128,.16)); }
+.combo-item.on { background: var(--vscode-list-activeSelectionBackground, rgba(0,120,212,.35)); color: var(--vscode-list-activeSelectionForeground, inherit); }
+.combo-item[hidden] { display: none; }
+.ci-name {
+  flex: 1; min-width: 0; font-size: 12.3px;
+  font-family: var(--vscode-editor-font-family, monospace);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ci-note { font-size: 10.5px; opacity: .7; flex: none; }
+.ci-check { width: 12px; height: 12px; flex: none; display: flex; }
+.ci-check svg { width: 12px; height: 12px; }
+.combo-empty { padding: 8px 9px; font-size: 11.5px; line-height: 1.5; color: var(--vscode-descriptionForeground); }
+
 input[type=text], input[type=password], input[type=search], select, textarea {
   font-family: inherit; font-size: 12.5px;
   color: var(--vscode-input-foreground);
@@ -680,7 +722,32 @@ input[type=number] {
   border: 1px solid var(--vscode-input-border, rgba(128,128,128,.35));
   border-radius: 6px; outline: none;
 }
-select { min-width: 170px; cursor: pointer; }
+select {
+  min-width: 0; cursor: pointer;
+  /* 原生下拉箭头在各平台差异极大（Windows 是个方块，macOS 是细箭头），
+     统一去掉自绘，同一套箭头、同一套内外边距，才能和输入框对齐 */
+  appearance: none; -webkit-appearance: none;
+  padding: 0 26px 0 9px; line-height: 26px;
+  color: var(--vscode-dropdown-foreground, var(--vscode-input-foreground));
+  background: var(--vscode-dropdown-background, var(--vscode-input-background));
+  border-color: var(--vscode-dropdown-border, var(--vscode-input-border, rgba(128,128,128,.35)));
+  text-overflow: ellipsis;
+}
+select option {
+  background: var(--vscode-dropdown-background, var(--vscode-editorWidget-background, #252526));
+  color: var(--vscode-dropdown-foreground, var(--vscode-input-foreground));
+}
+/* 自绘箭头：包一层定位，箭头用 currentColor，深浅主题都跟色 */
+.select-wrap { position: relative; display: inline-flex; align-items: center; min-width: 0; }
+.select-wrap select { width: 100%; }
+.select-wrap .caret {
+  position: absolute; right: 8px; width: 10px; height: 10px; flex: none;
+  pointer-events: none; opacity: .75;
+  color: var(--vscode-dropdown-foreground, var(--vscode-descriptionForeground));
+}
+/* 宽度统一按最长的一档标签留：模板名如「Conventional Commits（简洁）」不再被截成省略号 */
+.row-control .select-wrap { width: 232px; max-width: 100%; }
+.row-control .select-wrap.wide-select { width: 100%; }
 textarea {
   width: 100%; min-height: 66px; padding: 7px 9px; resize: vertical;
   line-height: 1.55; font-family: var(--vscode-editor-font-family, monospace); font-size: 12px;
@@ -708,7 +775,10 @@ input.invalid, textarea.invalid { border-color: var(--vscode-inputValidation-err
 /* 面板：把一组相关设置收进一个带边框的卡片 */
 .panel {
   border: 1px solid var(--vscode-panel-border, rgba(128,128,128,.28));
-  border-radius: 8px; overflow: hidden;
+  border-radius: 8px;
+  /* 不能 hidden：模型下拉是绝对定位浮层，会被裁掉。
+     行本身没有底色，所以放开也不会溢出圆角。 */
+  overflow: visible;
   background: var(--vscode-editorWidget-background, transparent);
 }
 .panel > * + * { border-top: 1px solid var(--vscode-panel-border, rgba(128,128,128,.16)); }
@@ -875,6 +945,9 @@ const ICON = {
   plug: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6.2 3v2.6M9.8 3v2.6"/><path d="M4.6 5.6h6.8v2.2a3.4 3.4 0 0 1-6.8 0z"/><path d="M8 11.4V13.4"/></svg>',
   refresh: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 8a5 5 0 1 1-1.5-3.6"/><path d="M13 2.8v2.9h-2.9"/></svg>',
   key: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="5.6" cy="10.4" r="2.4"/><path d="M7.4 8.6 12.8 3.2"/><path d="M10.6 3.2h2.2v2.2"/></svg>',
+  // 下拉箭头：上/下两态，和下划线输入框、按钮统一成 1.7 的线宽
+  chev: '<svg class="caret" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.4 8 10.4 12 6.4"/></svg>',
+  chevUp: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.6 8 5.6 12 9.6"/></svg>',
 };
 
 let S = null;             // 宿主下发的完整状态
@@ -890,6 +963,7 @@ let modelsLoading = false;
 let keyInput = '';
 let keyBusy = false;
 let advOpen = false;      // 「更多选项」的展开状态（重绘后需要还原）
+let modelOpen = false;    // 模型下拉是否展开（重绘后需要还原）
 
 const $ = (id) => document.getElementById(id);
 const esc = (v) => String(v == null ? '' : v)
@@ -914,6 +988,21 @@ function fieldMap() {
 function optionsFor(field) {
   if (field.optionsFrom) return (S.schema.templates[field.optionsFrom] || []);
   return field.options || [];
+}
+
+/** 下拉里能选的东西：接口拉到的列表 + 用户手填的候选模型（去重，接口优先） */
+function modelPickerOptions() {
+  const out = [];
+  const seen = new Set();
+  const push = (id, note) => {
+    const name = String(id == null ? '' : id).trim();
+    if (!name || seen.has(name)) return;
+    seen.add(name);
+    out.push({ id: name, note: note || '' });
+  };
+  for (const m of models) if (m) push(m.id, m.note);
+  for (const line of String(draft['commitCraft.availableModels'] || '').split('\\n')) push(line);
+  return out;
 }
 
 function toText(field, value) {
@@ -985,11 +1074,13 @@ function renderControl(key) {
   if (f.type === 'select') {
     const opts = optionsFor(f);
     const known = opts.some(o => o.value === value);
-    return '<select data-key="' + key + '" aria-label="' + esc(f.label) + '">'
+    return '<span class="select-wrap">'
+      + '<select data-key="' + key + '" aria-label="' + esc(f.label) + '">'
       + (known ? '' : '<option value="' + esc(value) + '" selected>' + esc(value || '(未设置)') + '</option>')
       + opts.map(o => '<option value="' + esc(o.value) + '"' + (o.value === value ? ' selected' : '')
           + ' title="' + esc(o.description || '') + '">' + esc(o.label) + '</option>').join('')
-      + '</select>';
+      + '</select>' + ICON.chev
+      + '</span>';
   }
   if (f.type === 'list') {
     const rows = Math.min(6, Math.max(3, String(value).split('\\n').length));
@@ -1076,10 +1167,31 @@ function renderModelSection() {
     + '<span class="k-state ok">Ollama 为本地服务，不需要密钥</span></div></div>'
   );
 
-  const modelList = models.length
-    ? '<datalist id="model-list">' + models.map(m => '<option value="' + esc(m.id) + '"'
-        + (m.note ? ' label="' + esc(m.note) + '"' : '') + '></option>').join('') + '</datalist>'
-    : '';
+  const pickables = modelPickerOptions();
+  const currentModel = String(draft['commitCraft.model'] || '');
+  const pickEmpty = pickables.length === 0;
+
+  const pickItems = pickEmpty
+    ? '<div class="combo-empty">' + (modelsLoading
+        ? '正在获取模型列表…'
+        : '还没有模型列表。点右侧「获取模型」拉取，或在下方直接输入模型名。') + '</div>'
+    : pickables.map(m => '<button type="button" class="combo-item' + (m.id === currentModel ? ' on' : '')
+        + '" data-model="' + esc(m.id) + '" role="option" aria-selected="' + (m.id === currentModel) + '">'
+        + '<span class="ci-name">' + esc(m.id) + '</span>'
+        + (m.note ? '<span class="ci-note">' + esc(m.note) + '</span>' : '')
+        + '<span class="ci-check">' + (m.id === currentModel ? ICON.check : '') + '</span>'
+        + '</button>').join('');
+
+  const combo = '<div class="combo' + (modelOpen ? ' is-open' : '') + '" id="model-combo">'
+    + '<input type="text" id="model-input" data-key="commitCraft.model" autocomplete="off" spellcheck="false"'
+    +   ' role="combobox" aria-expanded="' + (modelOpen ? 'true' : 'false') + '" aria-controls="model-pop"'
+    +   ' aria-autocomplete="list" aria-label="模型"'
+    +   ' value="' + esc(currentModel) + '" placeholder="' + esc(meta.defaultModel || '模型名称') + '">'
+    + '<button type="button" class="combo-toggle" id="btn-model-toggle"'
+    +   ' title="' + (pickEmpty ? '先点「获取模型」拉取列表' : '展开模型列表（' + pickables.length + ' 个）') + '"'
+    +   ' aria-label="展开模型列表">' + (modelOpen ? ICON.chevUp : ICON.chev) + '</button>'
+    + '<div class="combo-pop" id="model-pop" role="listbox"' + (modelOpen ? '' : ' hidden') + '>' + pickItems + '</div>'
+    + '</div>';
 
   const mismatch = meta.mismatch ? '<div class="hint-inline">' + esc(meta.mismatch) + '</div>' : '';
 
@@ -1087,7 +1199,7 @@ function renderModelSection() {
     + (modelsLoading ? '<span class="spin"></span>' : ICON.refresh) + '获取模型</button>';
 
   const modelNotes = (models.length
-      ? '<div class="hint-line">已获取 ' + models.length + ' 个模型，在输入框里输入可直接筛选。</div>'
+      ? '<div class="hint-line">已获取 ' + models.length + ' 个模型，点右侧箭头可直接选；也可以继续手打模型名。</div>'
       : '')
     + (modelsError ? '<div class="hint-inline">获取失败：' + esc(modelsError) + '</div>' : '');
 
@@ -1098,14 +1210,12 @@ function renderModelSection() {
     +   modelNotes
     + '</div>'
     + '<div class="row-control">'
-    +   '<input type="text" data-key="commitCraft.model" list="model-list" value="' + esc(draft['commitCraft.model']) + '"'
-    +     ' placeholder="' + esc(meta.defaultModel || '模型名称') + '" spellcheck="false" style="flex:1;min-width:0">'
+    +   combo
     +   (meta.supportsModelList ? fetchButton : '')
     +   (isDirty('commitCraft.model')
           ? '<button type="button" class="revert" data-revert="commitCraft.model" title="放弃这项改动">' + ICON.revert + '</button>'
           : '')
-    + '</div></div>'
-    + modelList;
+    + '</div></div>';
 
   const typeIcon = PROV_ICONS[TYPE_ICON[provider] || 'compatible'] || PROV_ICONS.compatible;
   const providerRow = '<div class="row">'
@@ -1113,9 +1223,10 @@ function renderModelSection() {
     +   '<div class="row-label">' + typeIcon + '接口协议</div>'
     +   '<div class="row-desc">决定请求格式与鉴权方式。选上面的卡片会自动切换，只有接自建网关时才需要手动改。</div>'
     + '</div>'
-    + '<div class="row-control"><select data-key="commitCraft.provider">'
+    + '<div class="row-control"><span class="select-wrap">'
+    + '<select data-key="commitCraft.provider">'
     + providers.map(p => '<option value="' + p.id + '"' + (p.id === provider ? ' selected' : '') + '>' + esc(p.label) + '</option>').join('')
-    + '</select></div></div>';
+    + '</select>' + ICON.chev + '</span></div></div>';
 
   return secHead(1, '选择服务商', '卡片是快捷键：点一下帮你把接口地址和推荐模型都填好，之后仍可自由修改。')
     + '<div class="picker">' + cards + '</div>'
@@ -1221,9 +1332,106 @@ function toast(message, level) {
   setTimeout(() => el.remove(), 4200);
 }
 
+/* 模型下拉：展开 → 过滤 → 选中，全部走真实 DOM，不依赖 datalist */
+function toggleModelPop(force) {
+  const open = typeof force === 'boolean' ? force : !modelOpen;
+  if (open && !modelPickerOptions().length) {
+    toast(modelsLoading ? '正在获取模型列表…' : '还没有模型列表，先点「获取模型」', 'warn');
+    return;
+  }
+  modelOpen = open;
+  render();
+  if (!open) return;
+  const input = $('model-input');
+  if (!input) return;
+  input.focus();
+  const end = input.value.length;
+  try { input.setSelectionRange(end, end); } catch (err) { /* 老 webview 不支持就忽略 */ }
+  const on = document.querySelector('#model-pop .combo-item.on');
+  if (on && on.scrollIntoView) on.scrollIntoView({ block: 'nearest' });
+}
+
+function pickModel(id) {
+  if (!id) return;
+  markDirty('commitCraft.model', id);
+  modelOpen = false;
+  render();
+  toast('已选择模型 ' + id, 'ok');
+}
+
+function filterModelList(q) {
+  const pop = $('model-pop');
+  if (!pop) return;
+  const needle = String(q || '').trim().toLowerCase();
+  let shown = 0;
+  for (const item of pop.querySelectorAll('.combo-item')) {
+    const hit = !needle || (item.textContent || '').toLowerCase().indexOf(needle) >= 0;
+    item.hidden = !hit;
+    if (hit) shown += 1;
+  }
+  const existing = pop.querySelector('.combo-none');
+  if (!shown && !existing) {
+    const empty = document.createElement('div');
+    empty.className = 'combo-empty combo-none';
+    empty.textContent = '没有匹配的模型，可以直接用当前输入值';
+    pop.appendChild(empty);
+  } else if (shown && existing) {
+    existing.remove();
+  }
+  for (const el of pop.querySelectorAll('.combo-item.active')) {
+    if (el.hidden) el.classList.remove('active');
+  }
+}
+
+function moveModelActive(delta) {
+  const items = Array.prototype.filter.call(
+    document.querySelectorAll('#model-pop .combo-item'),
+    el => !el.hidden,
+  );
+  if (!items.length) return;
+  let idx = items.findIndex(el => el.classList.contains('active'));
+  if (idx < 0) {
+    const onIdx = items.findIndex(el => el.classList.contains('on'));
+    idx = onIdx >= 0 ? onIdx : (delta > 0 ? -1 : items.length);
+  }
+  idx = (idx + delta + items.length) % items.length;
+  for (const el of items) el.classList.remove('active');
+  const next = items[idx];
+  next.classList.add('active');
+  if (next.scrollIntoView) next.scrollIntoView({ block: 'nearest' });
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.target && e.target.id === 'model-input') {
+    if (e.key === 'Escape') {
+      if (modelOpen) { modelOpen = false; render(); }
+      return;
+    }
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      if (!modelOpen) { toggleModelPop(true); return; }
+      e.preventDefault();
+      moveModelActive(e.key === 'ArrowDown' ? 1 : -1);
+      return;
+    }
+    if (e.key === 'Enter' && modelOpen) {
+      const act = document.querySelector('#model-pop .combo-item.active')
+        || document.querySelector('#model-pop .combo-item.on');
+      if (act) { e.preventDefault(); pickModel(act.dataset.model); }
+      return;
+    }
+  }
+  if (e.key === 'Escape' && modelOpen) { modelOpen = false; render(); }
+});
+
 document.addEventListener('click', (e) => {
   // 「更多选项」是原生 details，重绘时用 advOpen 还原展开状态
   if (e.target.closest('.adv > summary')) { advOpen = !advOpen; return; }
+
+  // 模型下拉：展开/收起 → 选中某一项 → 点空白处收起
+  if (e.target.closest('#btn-model-toggle')) { toggleModelPop(); return; }
+  const modelItem = e.target.closest('.combo-item[data-model]');
+  if (modelItem) { pickModel(modelItem.dataset.model); return; }
+  if (modelOpen && !e.target.closest('#model-combo')) { modelOpen = false; render(); }
 
   const nav = e.target.closest('.nav-item');
   if (nav) { active = nav.dataset.section; query = ''; $('search').value = ''; render(); $('content').scrollTop = 0; return; }
@@ -1254,7 +1462,7 @@ document.addEventListener('click', (e) => {
     S.meta.modelHint = d.modelHint || '';
     // 推荐模型按具体入口算，DeepSeek 的兜底模型不该是 gpt-4o-mini
     S.meta.defaultModel = p.defaultModel || d.defaultModel || '';
-    models = []; modelsError = ''; lastTest = null;
+    models = []; modelsError = ''; lastTest = null; modelOpen = false;
     render();
     vscode.postMessage({ type: 'queryKey', provider: p.provider });
     toast(p.baseUrl ? ('已选择 ' + p.label + '，记得点保存') : ('已选择 ' + p.label + '，还需要填写接口地址'), 'ok');
@@ -1304,6 +1512,8 @@ document.addEventListener('input', (e) => {
     }
   }
   if (dirty.has(key) !== prevDirty) renderNav();
+  // 拉开列表时边打字边过滤；列表没开就不打断输入
+  if (key === 'commitCraft.model' && modelOpen) filterModelList(el.value);
 });
 
 document.addEventListener('change', (e) => {
@@ -1331,7 +1541,7 @@ document.addEventListener('change', (e) => {
     S.meta.activePresetKey = '';
     const prov = S.schema.providers.find(x => x.id === next);
     S.meta.providerLabel = (prov && prov.label) || next;
-    models = []; modelsError = ''; lastTest = null; keyInput = '';
+    models = []; modelsError = ''; lastTest = null; keyInput = ''; modelOpen = false;
     vscode.postMessage({ type: 'queryKey', provider: next });
   }
   render();
@@ -1398,7 +1608,7 @@ window.addEventListener('message', (e) => {
           draft[f.key] = toText(f, S.values[f.key]);
         }
       }
-      if (msg.type === 'state') { dirty.clear(); keyInput = ''; }
+      if (msg.type === 'state') { dirty.clear(); keyInput = ''; modelOpen = false; }
       else {
         // 配置被外部改动：已改未保存的项保留用户输入，其余跟随新值
         const keep = new Set(dirty);
@@ -1436,17 +1646,19 @@ window.addEventListener('message', (e) => {
       keyBusy = false;
       keyInput = '';
       if (S) { S.meta.key = msg.key; S.meta.requiresKey = msg.provider !== 'ollama'; }
-      models = []; modelsError = '';
+      models = []; modelsError = ''; modelOpen = false;
       render();
       break;
     }
-    case 'modelsLoading': { modelsLoading = true; modelsError = ''; render(); break; }
+    case 'modelsLoading': { modelsLoading = true; modelsError = ''; modelOpen = false; render(); break; }
     case 'models': {
       modelsLoading = false;
       models = msg.models || [];
       modelsError = msg.error || '';
+      // 拿到列表就直接展开：用户点「获取模型」的下一步一定是选一个
+      modelOpen = models.length > 0;
       render();
-      if (!modelsError) toast('获取到 ' + models.length + ' 个模型', 'ok');
+      if (!modelsError) toast('获取到 ' + models.length + ' 个模型，点列表里的任意一项即可选中', 'ok');
       break;
     }
     case 'testRunning': { lastTest = { running: true }; render(); break; }

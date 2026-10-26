@@ -1,6 +1,6 @@
 # 实现进度对照
 
-对照 `CommitCraft-VSCode插件开发计划.md` 的阶段划分，记录已落地与未落地内容。最后更新：2026-10-26（v0.4.0）。
+对照 `CommitCraft-VSCode插件开发计划.md` 的阶段划分，记录已落地与未落地内容。最后更新：2026-10-26（v0.4.1）。
 
 ## 一、总体状态
 
@@ -47,6 +47,16 @@
 | 审查结果持久化 + 随时重开报告 | `src/ui/reviewStore.ts`、`commitCraft.showReviewReport` |
 | 报告 Markdown 导出 | `src/domain/review/reviewMarkdown.ts` |
 | 状态栏同时承载模型与问题数 | `src/ui/statusBarController.ts` + `src/app/statusSync.ts` |
+
+### v0.4.1 新增（模型下拉与下拉框统一）
+
+| 能力 | 位置 |
+| --- | --- |
+| 模型自绘 combobox（输入框 + 常驻箭头 + 浮层列表） | `settingsPanel.ts` → `modelPickerOptions` / `toggleModelPop` / `pickModel` |
+| 列表合并接口模型与 `availableModels` 手填项 | `modelPickerOptions()` |
+| 边打字边过滤、↑↓ / Enter / Esc / 点空白关闭 | `filterModelList` / `moveModelActive` + `keydown` |
+| 原生 select 统一外观（appearance:none + 自绘箭头） | `STYLE` → `.select-wrap` |
+| 面板 overflow 放开，避免裁掉浮层 | `STYLE` → `.panel` |
 
 ### v0.4.0 新增（设置页视觉与服务商图标）
 
@@ -118,10 +128,10 @@ npm run package   # 产出 commit-craft-0.2.0.vsix
 | --- | --- |
 | §6.2 检查清单 | 13 项自动核对，全部为 ✓（2 个提醒项：`repository` 空、`onStartupFinished`） |
 | 工具链 | `@vscode/vsce 4.0.0` + `ovsx 1.3.0`，`npm run package` 走 `vscode:prepublish` 出生产包 |
-| 版本基线 | **0.4.0**，`package.json` / `CHANGELOG.md` / git tag `v0.4.0` 三处一致 |
+| 版本基线 | **0.4.1**，`package.json` / `CHANGELOG.md` / git tag `v0.4.1` 三处一致 |
 | 类型基线 | `@types/vscode` 锁 `1.90.0` = `engines.vscode` 最低版，`tsc` 0 错误（证明没有偷偷用新 API） |
 | 包内容 | 17 文件 / 132 KB：`dist/extension.js` 181 KB + `media/`（图标 + 8 个服务商 SVG），无源码/测试/sourcemap |
-| 本地安装走查 | `code --install-extension commit-craft-0.4.0.vsix --force` 成功，版本与 `galleryBanner` 均正确 |
+| 本地安装走查 | `code --install-extension commit-craft-0.4.1.vsix --force` 成功，版本与 `galleryBanner` 均正确 |
 
 ### 待你操作（外部账号依赖，无法代做）
 

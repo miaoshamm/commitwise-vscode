@@ -82,8 +82,12 @@ function run(cmd, args, opts = {}) {
 const argv = process.argv.slice(2);
 const flags = new Set(argv.filter((a) => a.startsWith('--')));
 const valueOf = (name, fallback = '') => {
-  const hit = argv.find((a) => a.startsWith(`--${name}=`));
-  return hit ? hit.slice(name.length + 3) : fallback;
+  // 同时支持 --target=vsix 与 --target vsix 两种写法
+  const eq = argv.find((a) => a.startsWith(`--${name}=`));
+  if (eq) return eq.slice(name.length + 3);
+  const i = argv.indexOf(`--${name}`);
+  if (i >= 0 && argv[i + 1] && !argv[i + 1].startsWith('--')) return argv[i + 1];
+  return fallback;
 };
 
 const MODE = flags.has('--check') ? 'check' : flags.has('--dry-run') ? 'dry-run' : 'publish';
@@ -480,7 +484,7 @@ function publishOpenVsx(vsix) {
   step(any ? '发布完成' : '发布未完成');
   if (!any) {
     console.log(`  ${C.yellow}本地产物已就绪：${path.basename(vsix)}${C.reset}`);
-    console.log(`  ${C.dim}设置环境变量后重跑：VSCE_PAT=xxx OVSX_PAT=yyy npm run publish${C.reset}`);
+    console.log(`  ${C.dim}设置环境变量后重跑：VSCE_PAT=xxx OVSX_PAT=yyy npm run release${C.reset}`);
     process.exit(2);
   }
   process.exit(0);

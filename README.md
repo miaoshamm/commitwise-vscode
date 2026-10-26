@@ -103,6 +103,7 @@
 | `azure-openai` | — | 无公开接口（deployment 属管理面），只能手填 |
 
 - 结果缓存在 globalState（不进 `settings.json`），24 小时后再选会静默刷新；同一地址不会重复请求。
+- 设置页里点「获取模型」后列表会直接展开，点任意一项即可选中；也可以点输入框右侧的箭头随时重开，边打字边过滤，`↑`/`↓` 移动、`Enter` 选中、`Esc` 收起。下拉里同时包含 `commitCraft.availableModels` 里手填的候选模型（接口不返回列表时尤其有用）。
 - 列表按「适合写提交信息 / 审代码」排序（含 `coder`、`gpt-4`、`claude`、`deepseek` 等关键词的靠前），embedding / TTS / 图像模型排最后但不会隐藏。
 - 拉不到（404、无权限、内网禁用）不影响使用：会提示原因并给出手动输入入口；可用 `commitCraft.autoFetchModels: false` 关掉自动请求。
 - 各处给出的「推荐默认模型」只用于排序与预填，实际以接口返回为准。

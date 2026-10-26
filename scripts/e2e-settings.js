@@ -425,6 +425,52 @@ global.fetch = async (url, opts) => {
   );
   check(requests.some((r) => r.url.endsWith('/models')), '没有请求 /models');
 
+  /*
+   * 下拉必须是「点得开、选得中」的真列表。
+   * 之前用 <input list> + <datalist>，webview 里既没有箭头也点不出来，
+   * 表现就是「获取模型之后没法选」，所以这几条断言专门守这个回归。
+   */
+  if (modelsMsg) {
+    push(modelsMsg);
+    const pop = doc.querySelector('#model-pop');
+    check(Boolean(pop), '获取模型后没有渲染下拉列表');
+    check(Boolean(pop && !pop.hasAttribute('hidden')), '获取模型后下拉应自动展开');
+    check(doc.querySelector('#btn-model-toggle') !== null, '模型输入框缺少下拉按钮');
+    const items = [...doc.querySelectorAll('#model-pop .combo-item')];
+    check(items.length === 4, `下拉项应为 4 个，实际 ${items.length}`);
+    const pick = items.find((i) => i.dataset.model === 'deepseek-reasoner');
+    check(Boolean(pick), '下拉里找不到 deepseek-reasoner');
+    if (pick) {
+      pick.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+      const input2 = doc.querySelector('#model-input');
+      check(
+        input2 && input2.value === 'deepseek-reasoner',
+        `点击下拉项后模型应为 deepseek-reasoner，实际 ${input2 && input2.value}`,
+      );
+      check(doc.querySelector('#model-pop').hasAttribute('hidden'), '选中后下拉应收起');
+      check(doc.querySelector('#dirty').textContent.includes('未保存'), '选中模型后应标记为未保存');
+    }
+    // 过滤：输入框里打字应筛掉不匹配项
+    doc.querySelector('#btn-model-toggle').dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    const input3 = doc.querySelector('#model-input');
+    input3.value = 'coder';
+    input3.dispatchEvent(new window.Event('input', { bubbles: true }));
+    const visible = [...doc.querySelectorAll('#model-pop .combo-item')].filter((el) => !el.hidden);
+    check(visible.length === 1 && visible[0].dataset.model === 'deepseek-coder', '下拉没有按输入内容过滤');
+    input3.value = 'deepseek-reasoner';
+    input3.dispatchEvent(new window.Event('input', { bubbles: true }));
+  }
+
+  // 原生下拉在各平台长得不一样，必须统一套 .select-wrap（自绘箭头）
+  const selects = [...doc.querySelectorAll('#content select')];
+  check(selects.length > 0, '页面上没有渲染下拉框');
+  check(
+    selects.every((s) => s.parentElement.classList.contains('select-wrap')),
+    '有下拉框没有套自绘箭头容器',
+  );
+  check(/select\s*\{[^}]*appearance:\s*none/.test(html), '下拉框没有重置原生外观');
+  check(!/\.panel\s*\{[^}]*overflow:\s*hidden/.test(html), '面板的 overflow:hidden 会把模型下拉裁掉');
+
   // 9) 测试连接
   await messageHandler({
     type: 'test',

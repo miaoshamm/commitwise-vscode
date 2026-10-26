@@ -2,7 +2,7 @@
   "name": "commit-craft",
   "displayName": "CommitCraft",
   "description": "读取 Git 暂存区 diff，用你自己的大模型（DeepSeek / OpenAI / Claude / Ollama）生成规范 commit 信息，并顺带做代码审查、把问题标到具体行。密钥本地加密存储，绝不自动提交。",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "publisher": "commitcraft",
   "license": "MIT",
   "engines": {
