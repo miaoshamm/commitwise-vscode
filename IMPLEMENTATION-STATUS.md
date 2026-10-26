@@ -11,7 +11,7 @@
 | P2 多模型与模板 | ✅ 完成 | 4 类适配器齐备、**模型自动发现 + 快速配置向导**、连接测试、6 套内置模板 + 自定义、状态栏、取消/重试 |
 | P3 代码审查 | ✅ 完成 | JSON 输出 + 修复重试、行号合法性校验、**侧边栏清单 + 报告面板 + 诊断三出口**、点击跳转 |
 | P4 打磨 | 🟡 部分 | 脱敏、产物瘦身、文档、CHANGELOG、Markdown 导出已完成；i18n 与遥测未做（见"未实现"） |
-| P5 发布 | 🟡 部分 | 已能产出可安装 `.vsix`；Marketplace 发布需你自己的 publisher 与 PAT |
+| P5 发布 | 🟡 部分 | 发布前检查、打包、本地安装走查全部通过；Marketplace 推送需要 publisher 与 PAT（见"发布状态"） |
 
 ## 二、计划内功能落地情况
 
@@ -107,3 +107,26 @@ npm run package   # 产出 commit-craft-0.2.0.vsix
 3. **审查结果落盘文件**：可选写到 `.git/commitcraft-review.md`，方便附到 MR。
 4. **F15 i18n**：文案抽到 `l10n/bundle.l10n.zh-cn.json`，代码里换 `vscode.l10n.t()`。
 5. **发布准备**：`publisher` 改成你自己的 Marketplace 发布者名，`vsce login` 后 `vsce publish --pre-release` 灰度。
+
+## 六、发布状态（2026-10-26）
+
+发布流程已按计划 §6 代码化为 `scripts/publish.js`，`npm run preflight / release:dry / release:pre / release` 分别对应「检查 / 演练 / 灰度 / 正式」。
+
+### 已就绪
+
+| 项目 | 结果 |
+| --- | --- |
+| §6.2 检查清单 | 13 项自动核对，全部为 ✓（2 个提醒项：`repository` 空、`onStartupFinished`） |
+| 工具链 | `@vscode/vsce 4.0.0` + `ovsx 1.3.0`，`npm run package` 走 `vscode:prepublish` 出生产包 |
+| 版本基线 | **0.4.0**，`package.json` / `CHANGELOG.md` / git tag `v0.4.0` 三处一致 |
+| 类型基线 | `@types/vscode` 锁 `1.90.0` = `engines.vscode` 最低版，`tsc` 0 错误（证明没有偷偷用新 API） |
+| 包内容 | 17 文件 / 132 KB：`dist/extension.js` 181 KB + `media/`（图标 + 8 个服务商 SVG），无源码/测试/sourcemap |
+| 本地安装走查 | `code --install-extension commit-craft-0.4.0.vsix --force` 成功，版本与 `galleryBanner` 均正确 |
+
+### 待你操作（外部账号依赖，无法代做）
+
+1. 在 [Marketplace 管理页](https://marketplace.visualstudio.com/manage) 创建发布者，ID 必须与 `package.json` 的 `publisher`（当前 `commitcraft`）一致。
+2. 在 [Azure DevOps](https://dev.azure.com) 生成 PAT，Scope 勾 **Marketplace → Manage**（Organization 选 All accessible）。
+3. 提供令牌后执行：`VSCE_PAT=xxx npm run release`（先灰度用 `npm run release:pre`）。
+4. 可选：`OVSX_PAT` 同步 Open VSX；补 `repository`/`bugs` 让 Marketplace 页面出现源码与 Issue 入口。
+
