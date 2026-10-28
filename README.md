@@ -235,6 +235,44 @@ npm run release:vsix # 只产出 .vsix
 VSCE_PAT=xxx OVSX_PAT=yyy npm run release
 ```
 
+### 一键发版（GitHub Actions）
+
+`.github/workflows/release.yml` 把上面这套流程搬到 CI，本地只推一个 tag：
+
+```bash
+npm version patch --no-git-tag-version   # 或手动改 package.json 的 version
+# 补好 CHANGELOG.md 的 ## x.y.z 段落（它会直接变成 Release 正文）
+git commit -am "chore(release): v0.5.1"
+git tag v0.5.1 && git push origin main --tags
+```
+
+工作流依次做：`npm ci` → `npm run verify`（图标 / 类型 / 单测 / 构建 / 冒烟 / 4 套 e2e）→ 生产构建 + `vsce package` → 推 [Marketplace](https://marketplace.visualstudio.com/items?itemName=miaosha-ikio.commitwise)（配了 `OVSX_PAT` 时同时推 [Open VSX](https://open-vsx.org/extension/miaosha-ikio/commitwise)）→ 上传 `.vsix` artifact → 用 CHANGELOG 段落作正文创建 GitHub Release。
+
+不想打 tag 也能手动跑：**Actions → Release → Run workflow**，版本号留空＝用 `package.json` 当前版本，勾 `pre_release` 走灰度渠道，取消 `publish` 则只打包不推送。
+
+两条硬性规则（CI 会先拦下，给出具体原因）：
+
+- tag 必须与 `package.json` 的 `version` 完全一致；
+- 版本号必须是 Marketplace 上还没有的新版本，否则 `scripts/publish.js` 的 `checkRemote` 会直接失败——已发布版本不可覆盖，只能升版本号。
+
+需要在 **Settings → Secrets and variables → Actions** 配置：
+
+| Secret | 必填 | 用途与获取方式 |
+| --- | --- | --- |
+| `VSCE_PAT` | **是** | Azure DevOps Personal Access Token，见下方步骤 |
+| `OVSX_PAT` | 否 | [open-vsx.org 访问令牌](https://open-vsx.org/user-settings/tokens)，不配就跳过 Open VSX |
+| `GITHUB_TOKEN` | 自动 | 创建 Release 用，workflow 里已声明 `permissions: contents: write` |
+
+`VSCE_PAT` 是最容易卡住的一步，四步拿到：
+
+1. 用发布者 `miaosha-ikio` 所属的 Microsoft 账号登录 <https://dev.azure.com>；
+2. 右上角 **User settings → Personal access tokens → New Token**；
+3. **Organization 选 `All accessible organizations`**，点 **Show all scopes**，勾 **Marketplace → Manage**（其它 scope 全部不勾）；
+4. 复制 token（页面只显示一次），粘到仓库 Secret `VSCE_PAT`。
+
+> 该 token 默认一年过期，过期后发布会报 401，重新生成并更新 Secret 即可。`vsce` 与 `ovsx` 都是 devDependencies，CI 里不需要全局安装。
+
+
 
 `npm run e2e` 里的设置页用例会用 jsdom 真正执行 webview 脚本，验证的是「点一下服务商卡片 → 点保存 → 配置被写入」这条完整链路，不只是断言宿主收到了消息。
 

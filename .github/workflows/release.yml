@@ -1,0 +1,224 @@
+name: Release
+
+# 一键发版：checkout → npm ci → 全量校验 → 打包 vsix → 推送 Marketplace / Open VSX → GitHub Release
+#
+# 两种触发方式：
+#   1. 打 tag：git tag v0.5.1 && git push origin v0.5.1
+#      tag 必须与 package.json 的 version 完全一致，否则直接失败（避免发错版本）。
+#   2. 手动：Actions → Release → Run workflow
+#      版本号留空 = 用 package.json 当前版本；填了但和 package.json 不同则就地改写
+#      （只改 CI 里的工作副本，不回写仓库）。
+#
+# 需要的 Secret：
+#   VSCE_PAT  必填，Visual Studio Marketplace 的 Azure DevOps PAT（Marketplace → Manage）
+#   OVSX_PAT  可选，Open VSX 访问令牌；没有就跳过 Open VSX
+#   GITHUB_TOKEN 自动提供，用于创建 Release（需要本文件声明的 contents: write）
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号 X.Y.Z（留空 = package.json 当前版本；需已有对应 CHANGELOG 段落）'
+        required: false
+        type: string
+      pre_release:
+        description: '发到预发布渠道（vsce --pre-release，可先灰度验证）'
+        required: false
+        default: false
+        type: boolean
+      publish:
+        description: '推送到 Marketplace / Open VSX（取消勾选 = 只打包并创建 GitHub Release）'
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  # 创建/更新 GitHub Release 需要写权限
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Publish extension
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # 只在源仓库发布，避免 fork 误推
+    if: github.repository_owner == 'miaoshamm'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify required secrets
+        # tag 触发恒发布；手动触发时看 publish 勾选
+        if: github.event_name == 'push' || inputs.publish
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          if [ -z "$VSCE_PAT" ]; then
+            echo "::error::缺少 Secret VSCE_PAT。获取方式：https://dev.azure.com → User settings → Personal access tokens，Scope 选 Marketplace → Manage（Organization 选 All accessible organizations，且组织需已启用 Marketplace）；发布者 miaosha-ikio 需已在 https://marketplace.visualstudio.com/manage 创建。"
+            exit 1
+          fi
+          echo "VSCE_PAT 已配置。"
+
+      - name: Resolve version
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+
+          CURRENT=$(node -p "require('./package.json').version")
+
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+            SOURCE="tag ${GITHUB_REF_NAME}"
+          elif [[ -n "${INPUT_VERSION}" ]]; then
+            VERSION="${INPUT_VERSION}"
+            SOURCE="workflow_dispatch 输入"
+          else
+            VERSION="$CURRENT"
+            SOURCE="package.json"
+          fi
+
+          # 先校验格式，再改写工作副本，避免把非法版本写进 package.json
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::版本号 '$VERSION' 不是 MAJOR.MINOR.PATCH 形式（预发布请用 pre_release 选项，不要写后缀）"
+            exit 1
+          fi
+
+          if [[ "$GITHUB_REF" == refs/tags/v* ]] && [[ "$VERSION" != "$CURRENT" ]]; then
+            echo "::error::tag ${GITHUB_REF_NAME} 与 package.json 的 version ${CURRENT} 不一致。请先 npm version ${VERSION} 并提交，或改用一致的名字打 tag。"
+            exit 1
+          fi
+
+          if [[ "$VERSION" != "$CURRENT" ]]; then
+            node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.version=process.argv[1];fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n');" "$VERSION"
+            echo "已把 CI 工作副本的 version 改为 $VERSION（只影响本次构建，不回写仓库）"
+          fi
+
+          # CHANGELOG 段落既是发布门槛，也是 Release 正文来源
+          if ! node scripts/changelog-section.js "$VERSION" > /tmp/changelog-section.md; then
+            echo "::error::CHANGELOG.md 缺少 '## $VERSION' 段落。发布前请先补这一节（它就是 Release 正文）。"
+            exit 1
+          fi
+
+          if [[ "${{ inputs.pre_release }}" == "true" ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
+          echo "source=$SOURCE" >> "$GITHUB_OUTPUT"
+          echo "发布版本：$VERSION（来源：$SOURCE）"
+
+          {
+            echo "### Release"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Version | \`$VERSION\` |"
+            echo "| Source | $SOURCE |"
+            echo "| Pre-release | $([[ "${{ inputs.pre_release }}" == "true" ]] && echo yes || echo no) |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify (icons / types / unit tests / build / smoke / e2e)
+        run: npm run verify
+
+      - name: Package & publish
+        id: publish
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+          PRE_RELEASE: ${{ inputs.pre_release }}
+          DO_PUBLISH: ${{ inputs.publish }}
+        run: |
+          set -euo pipefail
+          ARGS=(--skip-verify)   # verify 已在上一步跑过，这里不重复
+          if [[ "$PRE_RELEASE" == "true" ]]; then
+            ARGS+=(--pre-release)
+          fi
+          if [[ "$DO_PUBLISH" == "false" ]]; then
+            echo "publish=false：只打包，不推送"
+            ARGS+=(--target vsix)
+          fi
+          node scripts/publish.js "${ARGS[@]}"
+
+      - name: Locate vsix
+        id: vsix
+        run: |
+          set -euo pipefail
+          FILE=$(ls -1t ./*.vsix 2>/dev/null | head -1 || true)
+          if [[ -z "$FILE" ]]; then
+            echo "::error::没有产出 .vsix"
+            exit 1
+          fi
+          echo "path=$FILE" >> "$GITHUB_OUTPUT"
+          echo "name=$(basename "$FILE")" >> "$GITHUB_OUTPUT"
+          echo "产物：$FILE（$(du -h "$FILE" | cut -f1)）"
+
+      - name: Upload vsix artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: commitwise-vscode-${{ steps.version.outputs.version }}
+          path: ${{ steps.vsix.outputs.path }}
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Compose release body
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          VSIX_NAME: ${{ steps.vsix.outputs.name }}
+        run: |
+          set -euo pipefail
+          {
+            cat /tmp/changelog-section.md
+            echo
+            echo "---"
+            echo
+            echo "### 安装"
+            echo
+            echo "下载下方 \`.vsix\`，或在 VSCode 扩展面板搜索 **CommitWise**："
+            echo
+            echo "- Marketplace：<https://marketplace.visualstudio.com/items?itemName=miaosha-ikio.commitwise>"
+            echo "- Open VSX：<https://open-vsx.org/extension/miaosha-ikio/commitwise>"
+            echo "- 本次产物：\`${VSIX_NAME}\`（版本 ${VERSION}）"
+            echo
+            echo '```bash'
+            echo 'code --install-extension miaosha-ikio.commitwise'
+            echo '# 或离线安装下载的 vsix'
+            echo 'code --install-extension ./commitwise-'"${VERSION}"'.vsix'
+            echo '```'
+          } > release-notes.md
+          echo "--- release body 预览（前 15 行）---"
+          head -15 release-notes.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: CommitWise ${{ steps.version.outputs.version }}
+          body_path: release-notes.md
+          files: ${{ steps.vsix.outputs.path }}
+          draft: false
+          prerelease: ${{ steps.version.outputs.prerelease == 'true' }}
+          generate_release_notes: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
