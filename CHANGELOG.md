@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.5.1
+
+把发版从「本地手动敲命令」变成「推个 tag 就完事」。
+
+### 新增
+
+- **GitHub Actions 一键发版**：推 `v*` tag 或在 Actions 里手动触发，自动跑全量校验 → 打包 vsix → 推送 Visual Studio Marketplace（配了 `OVSX_PAT` 时同时推 Open VSX）→ 用 CHANGELOG 段落作正文创建 GitHub Release 并附上 vsix。手动触发可指定版本号、走预发布渠道、或只打包不推送。
+- **`scripts/changelog-section.js`**：按版本精确截取 CHANGELOG 段落（`0.5` 不会误命中 `0.5.0`），找不到即视为发布门槛未满足。
+
+### 改进
+
+- 发布前拦截更硬：tag 与 `package.json` 版本不一致、版本号不是 `MAJOR.MINOR.PATCH`、CHANGELOG 缺对应段落，都会在打包前失败并说明原因。
+- `package.json` 补齐 `repository` / `bugs` / `homepage`，Marketplace 详情页的源码链接、Issue 入口、README 相对图片才能正常解析。
+
 ## 0.5.0
 
 补齐核心工作流的「最后一公里」：未保存改动不再无声丢失、恢复默认有确认可撤销、审查进行中看得见、模型建议能一键应用到代码。

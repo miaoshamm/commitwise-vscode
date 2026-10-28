@@ -1,5 +1,7 @@
 .vscode/**
 .vscode-test/**
+.github/**
+OPTIMIZATION-PLAN.md
 src/**
 test/**
 scripts/**
