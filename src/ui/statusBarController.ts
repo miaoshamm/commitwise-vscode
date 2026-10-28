@@ -58,7 +58,7 @@ export class StatusBarController implements vscode.Disposable {
     // chip = 当前模型，与「选择模型」命令同一枚图标，点开即切模型
     const modelText = brief ? `$(chip) ${brief}` : '$(chip) CommitCraft';
     const modelTip = brief
-      ? `当前模型：${this.providerLabel ? this.providerLabel + ' / ' : ''}${this.modelLabel}`
+      ? `当前模型：${this.providerLabel ? this.providerLabel + ' / ' : ''}${this.modelLabel}\n查看之前生成的提交信息：运行「CommitCraft: 提交信息历史」`
       : '尚未配置模型，运行「CommitCraft: 快速配置模型」开始';
 
     if (this.reviewTotal !== undefined) {

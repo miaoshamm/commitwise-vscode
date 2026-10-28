@@ -22,6 +22,8 @@ export function totalOf(counts: Record<Severity, number>): number {
  */
 export class ReviewStore implements vscode.Disposable {
   private current: StoredReview | undefined;
+  /** 审查进行中：侧边栏与报告面板据此显示运行态、禁用重复触发 */
+  private runningFlag = false;
   private readonly emitter = new vscode.EventEmitter<StoredReview | undefined>();
   readonly onDidChange = this.emitter.event;
 
@@ -32,6 +34,19 @@ export class ReviewStore implements vscode.Disposable {
 
   get(): StoredReview | undefined {
     return this.current;
+  }
+
+  isRunning(): boolean {
+    return this.runningFlag;
+  }
+
+  /** 标记审查开始/结束；状态变化会通知所有视图（树、面板、状态栏刷新） */
+  setRunning(running: boolean): void {
+    if (this.runningFlag === running) {
+      return;
+    }
+    this.runningFlag = running;
+    this.emitter.fire(this.current);
   }
 
   async save(review: StoredReview): Promise<void> {

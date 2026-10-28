@@ -89,6 +89,9 @@ const vscodeStub = {
       Object.assign(this, { range, message, severity });
     }
   },
+  CodeActionKind: { QuickFix: { value: 'quickfix' }, Refactor: { value: 'refactor' }, Source: { value: 'source' } },
+  CodeAction: class { constructor(title, kind) { Object.assign(this, { title, kind }); } },
+  WorkspaceEdit: class { constructor() { this.changes = new Map(); } replace() {} insert() {} delete() {} },
   EventEmitter: class {
     constructor() {
       this.listeners = new Set();
@@ -109,7 +112,7 @@ const vscodeStub = {
     createStatusBarItem: () => ({ show() {}, dispose() {}, text: '', tooltip: '', command: undefined }),
     createTreeView: () => ({ description: '', message: '', dispose() {}, reveal: async () => undefined }),
     showInformationMessage: async () => undefined,
-    showWarningMessage: async () => undefined,
+    showWarningMessage: async () => '恢复默认',
     showErrorMessage: async () => undefined,
     showQuickPick: async () => undefined,
     showInputBox: async () => undefined,
@@ -191,6 +194,7 @@ const vscodeStub = {
   },
   languages: {
     createDiagnosticCollection: () => ({ clear() {}, set() {}, dispose() {} }),
+    registerCodeActionsProvider: () => ({ dispose() {} }),
   },
   extensions: { getExtension: () => undefined },
   env: { language: 'zh-cn', clipboard: { writeText: async () => undefined } },
@@ -238,6 +242,8 @@ global.fetch = async (url, opts) => {
   const extension = require('../dist/extension.js');
   const context = {
     subscriptions: [],
+    // 扩展真实 ID：改 package.json 的 publisher 时这里要同步，否则「原生设置」过滤器会指向不存在的扩展
+    extension: { id: 'miaosha-ikio.commitwise' },
     secrets: {
       get: async (k) => secretStore.get(k),
       store: async (k, v) => secretStore.set(k, v),
@@ -492,6 +498,12 @@ global.fetch = async (url, opts) => {
   check(
     executed.some((e) => e.id === 'commitCraft.openNativeSettings'),
     '没有转发到原生设置命令',
+  );
+  // 过滤器必须用扩展真实 ID，否则设置页搜不到本扩展的设置项
+  const nativeOpen = executed.filter((e) => e.id === 'workbench.action.openSettings').pop();
+  check(
+    Boolean(nativeOpen) && String(nativeOpen.args[0]).includes('@ext:miaosha-ikio.commitwise'),
+    `原生设置过滤器不对：${nativeOpen && nativeOpen.args[0]}`,
   );
 
   // 12) 搜索：过滤出跨分区的字段

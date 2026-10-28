@@ -138,6 +138,9 @@ const vscodeStub = {
       Object.assign(this, { range, message, severity });
     }
   },
+  CodeActionKind: { QuickFix: { value: 'quickfix' }, Refactor: { value: 'refactor' }, Source: { value: 'source' } },
+  CodeAction: class { constructor(title, kind) { Object.assign(this, { title, kind }); } },
+  WorkspaceEdit: class { constructor() { this.changes = new Map(); } replace() {} insert() {} delete() {} },
   EventEmitter: class {
     constructor() {
       this.listeners = new Set();
@@ -232,6 +235,7 @@ const vscodeStub = {
       set: (uri, diags) => diagnostics.set(uri.toString(), diags),
       dispose: () => undefined,
     }),
+    registerCodeActionsProvider: () => ({ dispose() {} }),
   },
   extensions: {
     getExtension: (id) =>

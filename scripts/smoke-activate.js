@@ -1,6 +1,6 @@
 /**
  * 冒烟测试：在纯 Node 里用一个最小 vscode 桩加载打包产物，验证
- * activate() 不抛错、12 个命令全部注册成功。
+ * activate() 不抛错、所有命令全部注册成功。
  *
  * 只检查"接线"是否正确（命令 id、API 用法、构造顺序），不模拟真实 UI。
  */
@@ -87,6 +87,16 @@ const vscodeStub = {
       Object.assign(this, { range, message, severity });
     }
   },
+  CodeActionKind: { QuickFix: { value: 'quickfix' }, Refactor: { value: 'refactor' }, Source: { value: 'source' } },
+  CodeAction: class {
+    constructor(title, kind) {
+      Object.assign(this, { title, kind });
+    }
+  },
+  WorkspaceEdit: class {
+    constructor() { this.changes = new Map(); }
+    replace() {} insert() {} delete() {};
+  },
   EventEmitter: class {
     constructor() {
       this.listeners = new Set();
@@ -154,7 +164,10 @@ const vscodeStub = {
       return undefined;
     },
   },
-  languages: { createDiagnosticCollection: () => diagnosticCollection },
+  languages: {
+    createDiagnosticCollection: () => diagnosticCollection,
+    registerCodeActionsProvider: () => disposable('codeactions'),
+  },
   extensions: { getExtension: () => undefined },
   env: { language: 'zh-cn', clipboard: { writeText: async () => undefined } },
 };
@@ -210,6 +223,7 @@ const expected = [
   'commitCraft.clearReview',
   'commitCraft.revealReviewView',
   'commitCraft.goToIssue',
+  'commitCraft.applySuggestion',
   'commitCraft.quickSetup',
   'commitCraft.selectModel',
   'commitCraft.refreshModels',
@@ -223,6 +237,7 @@ const expected = [
   'commitCraft.openNativeSettings',
   'commitCraft.showOutput',
   'commitCraft.clearDiagnostics',
+  'commitCraft.showHistory',
 ];
 
 for (const id of expected) {

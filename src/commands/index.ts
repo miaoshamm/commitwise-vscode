@@ -11,7 +11,9 @@ import { pingModel } from '../infra/ai/callModel';
 import { AiError } from '../infra/ai/types';
 import { quickSetup, refreshModels, selectModel } from './modelCommands';
 import { clearReview, copyReviewMarkdown, openIssueAt, revealReviewView, showReviewReport } from './reviewCommands';
+import { showHistory } from './historyCommands';
 import { SettingsPanel } from '../ui/settingsPanel';
+import { applySuggestionToWorkspace } from '../ui/reviewSuggestionApply';
 
 function wrap(fn: (...args: any[]) => Promise<void>, deps: AppDeps) {
   return async (...args: any[]) => {
@@ -192,8 +194,10 @@ function openSettingsPage(context: vscode.ExtensionContext, deps: AppDeps, secti
 }
 
 /** 原生设置界面，给想直接改 settings.json / 做团队共享配置的用户留的口子 */
-async function openNativeSettings(): Promise<void> {
-  await vscode.commands.executeCommand('workbench.action.openSettings', '@ext:commitcraft.commit-craft');
+async function openNativeSettings(context: vscode.ExtensionContext): Promise<void> {
+  // 用扩展真实 ID（publisher.name）过滤，改 publisher 时这里自动跟随，不必手工同步
+  const id = context.extension?.id ?? 'miaosha-ikio.commitwise';
+  await vscode.commands.executeCommand('workbench.action.openSettings', `@ext:${id}`);
 }
 
 export function registerCommands(context: vscode.ExtensionContext, deps: AppDeps): void {
@@ -217,6 +221,23 @@ export function registerCommands(context: vscode.ExtensionContext, deps: AppDeps
   register('commitCraft.revealReviewView', () => revealReviewView());
   register('commitCraft.clearReview', () => clearReview(deps));
   register('commitCraft.goToIssue', (args) => openIssueAt(args));
+  // 编辑器 Quick Fix 与报告面板共用：按 issueId 把模型建议落到对应代码行
+  register('commitCraft.applySuggestion', async (issueId?: string) => {
+    if (typeof issueId !== 'string') {
+      return;
+    }
+    const review = deps.review.get();
+    if (!review) {
+      void vscode.window.showInformationMessage('还没有审查结果，先运行「审查暂存区代码」。');
+      return;
+    }
+    const issue = review.issues.find((i) => i.id === issueId);
+    if (!issue) {
+      deps.logger.warn(`找不到 issue ${issueId}`);
+      return;
+    }
+    await applySuggestionToWorkspace(review.root, issue, deps.logger);
+  });
 
   // 模型配置
   register('commitCraft.quickSetup', () => quickSetup(deps));
@@ -237,7 +258,7 @@ export function registerCommands(context: vscode.ExtensionContext, deps: AppDeps
   // 可选参数是分区 id（model / commit / review / context / advanced），用于从别处深链到某一页
   register('commitCraft.openSettings', async (section?: string) => openSettingsPage(context, deps, section));
   register('commitCraft.openSettingsPage', async (section?: string) => openSettingsPage(context, deps, section));
-  register('commitCraft.openNativeSettings', () => openNativeSettings());
+  register('commitCraft.openNativeSettings', () => openNativeSettings(context));
   register('commitCraft.showOutput', async () => {
     deps.logger.show();
   });
@@ -245,4 +266,5 @@ export function registerCommands(context: vscode.ExtensionContext, deps: AppDeps
     deps.diagnostics.clear();
     void vscode.window.showInformationMessage('已清除审查标记。');
   });
+  register('commitCraft.showHistory', () => showHistory(deps));
 }

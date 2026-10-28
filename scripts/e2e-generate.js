@@ -121,6 +121,9 @@ const vscodeStub = {
   Range: class {},
   Position: class {},
   Diagnostic: class {},
+  CodeActionKind: { QuickFix: { value: 'quickfix' }, Refactor: { value: 'refactor' }, Source: { value: 'source' } },
+  CodeAction: class {},
+  WorkspaceEdit: class {},
   EventEmitter: class {
     constructor() {
       this.listeners = new Set();
@@ -188,7 +191,7 @@ const vscodeStub = {
     },
     executeCommand: async () => undefined,
   },
-  languages: { createDiagnosticCollection: () => ({ clear() {}, set() {}, dispose() {} }) },
+  languages: { createDiagnosticCollection: () => ({ clear() {}, set() {}, dispose() {} }), registerCodeActionsProvider: () => ({ dispose() {} }) },
   extensions: {
     getExtension: (id) =>
       id === 'vscode.git' ? { isActive: true, exports: { getAPI: () => ({ repositories: [repository] }) } } : undefined,

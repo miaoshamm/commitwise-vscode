@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { ReviewIssue, Severity } from '../domain/review/reviewIssue';
+import { applySuggestionToWorkspace } from './reviewSuggestionApply';
 import { StoredReview } from './reviewStore';
 
 const SEVERITY_LABEL: Record<Severity, string> = { high: '高', medium: '中', low: '低' };
@@ -36,11 +37,18 @@ const ICON_RERUN = `<svg class="btn-ico" viewBox="0 0 16 16" width="13" height="
 const ICON_TREE = `<svg class="btn-ico" viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"><rect x="2.7" y="2.9" width="10.6" height="10.2" rx="1.6"/><path d="M6.3 2.9v10.2"/></svg>`;
 
 
-function renderIssue(issue: ReviewIssue): string {
+function renderIssue(issue: ReviewIssue, appliedIds: Set<string>): string {
   const locator = issue.anchor === 'line' && issue.line ? `:${issue.line}` : '';
-  const suggestion = issue.suggestion ? `<pre class="suggestion">${esc(issue.suggestion)}</pre>` : '';
+  const applied = appliedIds.has(issue.id) ? ' applied' : '';
+  const applyBtn =
+    issue.suggestion && issue.anchor === 'line' && issue.line
+      ? `<button class="apply-btn" data-apply="${esc(issue.id)}" title="把这行替换为模型建议">应用建议</button>`
+      : '';
+  const suggestion = issue.suggestion
+    ? `<div class="suggestion-wrap"><pre class="suggestion">${esc(issue.suggestion)}</pre>${applyBtn}</div>`
+    : '';
   return `
-    <div class="issue" data-sev="${issue.severity}" data-file="${esc(issue.file)}" data-line="${issue.line ?? ''}">
+    <div class="issue${applied}" data-id="${esc(issue.id)}" data-sev="${issue.severity}" data-file="${esc(issue.file)}" data-line="${issue.line ?? ''}">
       <div class="issue-head">
         <span class="badge sev-${issue.severity}">${SEVERITY_LABEL[issue.severity]}</span>
         <span class="cat">${esc(CATEGORY_LABEL[issue.category] ?? issue.category)}</span>
@@ -52,7 +60,7 @@ function renderIssue(issue: ReviewIssue): string {
     </div>`;
 }
 
-function renderHtml(data: StoredReview, nonce: string): string {
+function renderHtml(data: StoredReview, nonce: string, running = false, appliedIds = new Set<string>()): string {
   const groups =
     data.byFile.length > 0
       ? data.byFile
@@ -60,7 +68,7 @@ function renderHtml(data: StoredReview, nonce: string): string {
             (group) => `
       <section class="file" data-file="${esc(group.file)}">
         <h3><span class="fname">${esc(group.file)}</span><span class="count">${group.issues.length}</span></h3>
-        ${group.issues.map(renderIssue).join('')}
+        ${group.issues.map((i) => renderIssue(i, appliedIds)).join('')}
       </section>`,
           )
           .join('')
@@ -74,6 +82,9 @@ function renderHtml(data: StoredReview, nonce: string): string {
 
   const total = data.counts.high + data.counts.medium + data.counts.low;
   const when = new Date(data.savedAt).toLocaleString('zh-CN', { hour12: false });
+  const runningBanner = running
+    ? `<div class="running"><span class="spin"></span>正在审查暂存区，完成后这里会自动更新…</div>`
+    : '';
 
   return `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -96,6 +107,21 @@ function renderHtml(data: StoredReview, nonce: string): string {
   }
   .fname { font-family: var(--vscode-editor-font-family); }
   .meta { color: var(--vscode-descriptionForeground); font-size: 12px; }
+  .running {
+    display: flex; align-items: center; gap: 8px; margin: 12px 0 14px;
+    padding: 10px 14px; border-radius: 6px; font-size: 12px;
+    color: var(--vscode-textLink-foreground);
+    background: var(--vscode-textBlockQuote-background);
+    border-left: 3px solid var(--vscode-textLink-foreground);
+  }
+  .running .spin {
+    width: 12px; height: 12px; flex: none; border-radius: 50%;
+    border: 1.5px solid currentColor; border-top-color: transparent;
+    animation: ccspin .8s linear infinite;
+  }
+  @keyframes ccspin { to { transform: rotate(360deg); } }
+  button[disabled] { opacity: .55; cursor: default; }
+  button[disabled]:hover { background: var(--vscode-button-secondaryBackground); }
   .toolbar { display: flex; gap: 8px; margin: 12px 0 4px; flex-wrap: wrap; }
   button {
     font-family: inherit; font-size: 12px; cursor: pointer;
@@ -153,12 +179,29 @@ function renderHtml(data: StoredReview, nonce: string): string {
   .loc { margin-left: auto; color: var(--vscode-textLink-foreground); font-family: var(--vscode-editor-font-family); }
   .issue-title { font-weight: 600; margin-bottom: 4px; }
   .issue-detail { color: var(--vscode-foreground); }
+  .suggestion-wrap { margin: 8px 0 0; }
   .suggestion {
-    margin: 8px 0 0; padding: 8px 10px; border-radius: 4px; overflow-x: auto;
+    margin: 0; padding: 8px 10px; border-radius: 4px; overflow-x: auto;
     font-family: var(--vscode-editor-font-family); font-size: 12px;
     background: var(--vscode-textCodeBlock-background);
     white-space: pre-wrap; word-break: break-word;
   }
+  .apply-btn {
+    margin-top: 6px; font-size: 11px; padding: 2px 10px;
+    color: var(--vscode-button-foreground); background: var(--vscode-button-background);
+    border: none; border-radius: 3px; cursor: pointer;
+  }
+  .apply-btn:hover { background: var(--vscode-button-hoverBackground); }
+  .issue.applied {
+    opacity: .55; position: relative;
+  }
+  .issue.applied::after {
+    content: '已应用'; position: absolute; top: 8px; right: 10px;
+    font-size: 10px; padding: 1px 6px; border-radius: 3px;
+    color: var(--vscode-testing-iconPassed);
+    border: 1px solid var(--vscode-testing-iconPassed);
+  }
+  .issue.applied .apply-btn { display: none; }
   .empty { color: var(--vscode-descriptionForeground); padding: 24px 0; }
   .hidden { display: none !important; }
   .copy-ok { color: var(--vscode-testing-iconPassed); }
@@ -168,9 +211,10 @@ function renderHtml(data: StoredReview, nonce: string): string {
 <div class="wrap">
   <h1>${esc(data.repoName)} <span style="font-weight:400;color:var(--vscode-descriptionForeground)">· ${esc(data.branch)}</span></h1>
   <div class="meta">${esc(when)} · ${esc(data.providerLabel)} / ${esc(data.model)} · 用时 ${(data.elapsedMs / 1000).toFixed(1)}s</div>
+  ${runningBanner}
   <div class="toolbar">
     <button class="primary" id="btn-copy">${ICON_COPY}<span class="lbl">复制为 Markdown</span></button>
-    <button id="btn-rerun">${ICON_RERUN}<span class="lbl">重新审查暂存区</span></button>
+    <button id="btn-rerun"${running ? ' disabled title="审查正在进行中…"' : ''}>${ICON_RERUN}<span class="lbl">重新审查暂存区</span></button>
     <button id="btn-tree">${ICON_TREE}<span class="lbl">在侧边栏查看</span></button>
   </div>
   <div class="chips">
@@ -219,6 +263,14 @@ function renderHtml(data: StoredReview, nonce: string): string {
       return;
     }
 
+    // 应用建议：在 issue 卡片内点「应用建议」按钮
+    const applyBtn = target.closest('.apply-btn[data-apply]');
+    if (applyBtn) {
+      const id = applyBtn.getAttribute('data-apply');
+      if (id) vscode.postMessage({ type: 'apply', id });
+      return;
+    }
+
     const box = target.closest('.issue');
     if (!box) return;
     const file = box.getAttribute('data-file');
@@ -242,6 +294,13 @@ function renderHtml(data: StoredReview, nonce: string): string {
         lbl.textContent = original;
         btn.classList.remove('copy-ok');
       }, 1800);
+      return;
+    }
+    if (msg && msg.type === 'applied' && msg.id) {
+      const card = document.querySelector('.issue[data-id="' + CSS.escape(msg.id) + '"]');
+      if (card instanceof HTMLElement) {
+        card.classList.add('applied');
+      }
     }
   });
 </script>
@@ -253,6 +312,10 @@ export interface ReviewPanelHooks {
   onCopy: (review: StoredReview) => Promise<void>;
   onRerun: () => Promise<void>;
   onShowTree: () => Promise<void>;
+  /** 应用某条审查建议到对应代码行；返回是否成功落地 */
+  onApply?: (issueId: string) => Promise<'applied' | 'cancelled' | 'failed' | 'skipped'>;
+  /** 订阅审查运行状态（返回取消订阅句柄）；面板据此显示「审查中」并禁用重复触发 */
+  subscribeRunning?: (cb: (running: boolean) => void) => vscode.Disposable;
 }
 
 /**
@@ -263,6 +326,11 @@ export interface ReviewPanelHooks {
  */
 export class ReviewPanel {
   private static current: ReviewPanel | undefined;
+
+  private running = false;
+  private runningSub: vscode.Disposable | undefined;
+  /** 已应用建议的 issue id：面板侧把对应卡片标灰，不再重复提示应用 */
+  private appliedIds = new Set<string>();
 
   private constructor(
     private readonly panel: vscode.WebviewPanel,
@@ -287,13 +355,20 @@ export class ReviewPanel {
     ReviewPanel.current = instance;
     instance.update(review);
 
+    // 审查开始/结束时面板自动切换运行态（横幅 + 禁用 rerun），不需要重新打开
+    if (hooks.subscribeRunning) {
+      instance.runningSub = hooks.subscribeRunning((running) => instance.setRunning(running));
+    }
+
     panel.onDidDispose(() => {
       if (ReviewPanel.current === instance) {
         ReviewPanel.current = undefined;
       }
+      instance.runningSub?.dispose();
+      instance.runningSub = undefined;
     });
 
-    panel.webview.onDidReceiveMessage(async (msg: { type: string; file?: string; line?: number }) => {
+    panel.webview.onDidReceiveMessage(async (msg: { type: string; file?: string; line?: number; id?: string }) => {
       if (msg.type === 'goto' && msg.file) {
         const root = (ReviewPanel.lastReview ?? review).root;
         await gotoIssue({ root, file: msg.file, line: msg.line });
@@ -306,7 +381,19 @@ export class ReviewPanel {
         return;
       }
       if (msg.type === 'rerun') {
+        // 运行态兜底：按钮虽已禁用，快捷方式/命令面板仍可能触发
+        if (instance.running) {
+          return;
+        }
         await hooks.onRerun();
+        return;
+      }
+      if (msg.type === 'apply' && typeof msg.id === 'string' && hooks.onApply) {
+        const outcome = await hooks.onApply(msg.id);
+        if (outcome === 'applied') {
+          instance.appliedIds.add(msg.id);
+          void panel.webview.postMessage({ type: 'applied', id: msg.id });
+        }
         return;
       }
       if (msg.type === 'showTree') {
@@ -317,10 +404,21 @@ export class ReviewPanel {
 
   private static lastReview: StoredReview | undefined;
 
+  private setRunning(running: boolean): void {
+    if (this.running === running) {
+      return;
+    }
+    this.running = running;
+    const latest = ReviewPanel.lastReview;
+    if (latest) {
+      this.update(latest);
+    }
+  }
+
   private update(review: StoredReview): void {
     ReviewPanel.lastReview = review;
     const nonce = Array.from({ length: 32 }, () => Math.floor(Math.random() * 36).toString(36)).join('');
-    this.panel.webview.html = renderHtml(review, nonce);
+    this.panel.webview.html = renderHtml(review, nonce, this.running, this.appliedIds);
   }
 
   static disposeAll(): void {

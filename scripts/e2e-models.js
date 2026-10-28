@@ -102,6 +102,9 @@ const vscodeStub = {
       Object.assign(this, { range, message, severity });
     }
   },
+  CodeActionKind: { QuickFix: { value: 'quickfix' }, Refactor: { value: 'refactor' }, Source: { value: 'source' } },
+  CodeAction: class { constructor(title, kind) { Object.assign(this, { title, kind }); } },
+  WorkspaceEdit: class { constructor() { this.changes = new Map(); } replace() {} insert() {} delete() {} },
   EventEmitter: class {
     constructor() {
       this.listeners = new Set();
@@ -177,7 +180,7 @@ const vscodeStub = {
     },
     executeCommand: async () => undefined,
   },
-  languages: { createDiagnosticCollection: () => ({ clear() {}, set() {}, dispose() {} }) },
+  languages: { createDiagnosticCollection: () => ({ clear() {}, set() {}, dispose() {} }), registerCodeActionsProvider: () => ({ dispose() {} }) },
   extensions: { getExtension: () => undefined },
   env: { language: 'zh-cn', clipboard: { writeText: async () => undefined } },
 };

@@ -7,6 +7,7 @@ import { collectStaged, StagedSnapshot } from '../infra/git/diffCollector';
 import { GitError, GitRunner, GitUnavailableError } from '../infra/git/gitRunner';
 import { pickRepository, RepoHandle } from '../infra/git/repoLocator';
 import { Logger } from '../infra/log/logger';
+import { CommitHistory } from '../ui/commitHistory';
 import { DiagnosticsBridge } from '../ui/diagnosticsBridge';
 import { ReviewStore } from '../ui/reviewStore';
 import { ReviewTreeProvider } from '../ui/reviewTreeProvider';
@@ -26,6 +27,8 @@ export interface AppDeps {
   models: ModelStore;
   /** 最近一次审查结果的唯一来源 */
   review: ReviewStore;
+  /** 最近生成过的提交信息（环形，最多 10 条） */
+  history: CommitHistory;
   /** 侧边栏问题清单 */
   reviewView: ReviewTreeProvider;
   extensionUri: vscode.Uri;

@@ -5,6 +5,7 @@ import { ModelStore } from './infra/ai/modelStore';
 import { SecretStore } from './infra/config/configService';
 import { NodeGitRunner } from './infra/git/gitRunner';
 import { Logger } from './infra/log/logger';
+import { CommitHistory } from './ui/commitHistory';
 import { DiagnosticsBridge } from './ui/diagnosticsBridge';
 import { ReviewStore } from './ui/reviewStore';
 import { ReviewTreeProvider } from './ui/reviewTreeProvider';
@@ -23,6 +24,7 @@ export function createDeps(context: vscode.ExtensionContext): AppDeps {
   const runner = new NodeGitRunner();
   const models = new ModelStore(context.globalState);
   const review = new ReviewStore(context.workspaceState);
+  const history = new CommitHistory(context.globalState);
   const reviewView = new ReviewTreeProvider(review);
 
   return {
@@ -35,6 +37,7 @@ export function createDeps(context: vscode.ExtensionContext): AppDeps {
     cancellation,
     models,
     review,
+    history,
     reviewView,
     extensionUri: context.extensionUri,
   };

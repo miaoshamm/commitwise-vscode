@@ -4,7 +4,7 @@ import { TemplateRegistry } from '../domain/prompt/builtinTemplates';
 import { callModel } from '../infra/ai/callModel';
 import { AiError } from '../infra/ai/types';
 import { AppDeps, handleError, prepareStagedContext } from './context';
-import { buildMessages } from './promptBuilder';
+import { buildMessages, repoNameOf } from './promptBuilder';
 
 function reportWarnings(deps: AppDeps, parsed: ParsedCommit): void {
   for (const issue of parsed.issues) {
@@ -136,6 +136,19 @@ export async function generateCommitMessage(deps: AppDeps, templateIdOverride?: 
 
   const outcome = deps.inputBridge.write(repo, message);
   deps.statusBar.succeeded(outcome === 'input-box' ? '已写入输入框' : '已复制');
+
+  // 写入成功后入栈历史：误清空输入框也能从「提交信息历史」找回
+  void deps.history
+    .push({
+      message,
+      model: config.model,
+      time: Date.now(),
+      repoName: repoNameOf(snapshot.root),
+      branch: snapshot.branch,
+    })
+    .catch((err) => {
+      deps.logger.warn(`写入提交信息历史失败：${(err as Error)?.message ?? err}`);
+    });
 
   if (outcome === 'input-box') {
     void vscode.window.showInformationMessage(`已写入源代码管理输入框（${message.split('\n')[0]}）`, '恢复原草稿');

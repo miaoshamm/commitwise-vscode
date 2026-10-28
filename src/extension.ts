@@ -3,6 +3,7 @@ import { registerCommands } from './commands';
 import { maybeShowOnboarding, syncReviewContext, syncStatusBar } from './app/statusSync';
 import { createDeps } from './container';
 import { ReviewPanel } from './ui/reviewPanel';
+import { ReviewCodeActionProvider } from './ui/reviewCodeActionProvider';
 import { SettingsPanel } from './ui/settingsPanel';
 import { REVIEW_VIEW_ID } from './ui/reviewTreeProvider';
 
@@ -12,7 +13,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const created = createDeps(context);
   deps = created;
 
-  context.subscriptions.push(created.logger, created.statusBar, created.diagnostics, created.review, created.reviewView);
+  context.subscriptions.push(created.logger, created.statusBar, created.diagnostics, created.review, created.reviewView, created.history);
 
   // 侧边栏问题清单：审查结果的主入口
   const treeView = vscode.window.createTreeView(REVIEW_VIEW_ID, {
@@ -31,6 +32,15 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(created.review.onDidChange(() => syncView()));
 
   registerCommands(context, created);
+
+  // 编辑器灯泡：审查诊断上的「应用建议」Quick Fix 与「打开报告」
+  context.subscriptions.push(
+    vscode.languages.registerCodeActionsProvider(
+      { scheme: 'file' },
+      new ReviewCodeActionProvider(created.review),
+      { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] },
+    ),
+  );
 
   void vscode.commands.executeCommand('setContext', 'commitCraft.requesting', false);
   void vscode.commands.executeCommand('setContext', 'commitCraft.hasDraftBackup', false);

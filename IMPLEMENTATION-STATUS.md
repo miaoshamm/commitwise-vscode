@@ -135,7 +135,7 @@ npm run package   # 产出 commit-craft-0.2.0.vsix
 
 ### 待你操作（外部账号依赖，无法代做）
 
-1. 在 [Marketplace 管理页](https://marketplace.visualstudio.com/manage) 创建发布者，ID 必须与 `package.json` 的 `publisher`（当前 `commitcraft`）一致。
+1. 在 [Marketplace 管理页](https://marketplace.visualstudio.com/manage) 创建发布者，ID 必须与 `package.json` 的 `publisher`（当前 `miaosha-ikio`）一致。
 2. 在 [Azure DevOps](https://dev.azure.com) 生成 PAT，Scope 勾 **Marketplace → Manage**（Organization 选 All accessible）。
 3. 提供令牌后执行：`VSCE_PAT=xxx npm run release`（先灰度用 `npm run release:pre`）。
 4. 可选：`OVSX_PAT` 同步 Open VSX；补 `repository`/`bugs` 让 Marketplace 页面出现源码与 Issue 入口。

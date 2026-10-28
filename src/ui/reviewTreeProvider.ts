@@ -175,7 +175,11 @@ export class ReviewTreeProvider implements vscode.TreeDataProvider<ReviewTreeNod
   describe(): { description?: string; message?: string; title?: string } {
     const review = this.store.get();
     if (!review) {
-      return { description: undefined };
+      // 没有历史结果时也可能正在跑第一次审查
+      return { description: this.store.isRunning() ? '审查中…' : undefined };
+    }
+    if (this.store.isRunning()) {
+      return { description: '审查中…', message: `${review.repoName} · ${review.branch}` };
     }
     const total = totalOf(review.counts);
     const time = new Date(review.savedAt).toLocaleTimeString('zh-CN', { hour12: false });

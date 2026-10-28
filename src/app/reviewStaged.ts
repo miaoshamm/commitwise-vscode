@@ -12,6 +12,12 @@ import { buildMessages, buildReviewRepairMessage, repoNameOf } from './promptBui
 import { reviewPanelHooks } from './reviewHooks';
 
 export async function reviewStagedChanges(deps: AppDeps): Promise<void> {
+  // 重复触发会打断进行中的审查（CancellationController 会取消上一个请求），直接拦下
+  if (deps.review.isRunning()) {
+    void vscode.window.showWarningMessage('审查正在进行中，请等当前审查完成后再操作。');
+    return;
+  }
+
   const ctx = await prepareStagedContext(deps);
   if (!ctx) {
     return;
@@ -31,6 +37,9 @@ export async function reviewStagedChanges(deps: AppDeps): Promise<void> {
   const built = buildMessages(template, snapshot, prepared, config);
   const controller = deps.cancellation.begin();
   const startedAt = Date.now();
+
+  // 运行态先落库：侧边栏与已打开的报告面板立即显示「审查中」并禁用重复触发
+  deps.review.setRunning(true);
 
   let outcome: ReturnType<typeof parseReviewResponse> | undefined;
 
@@ -104,6 +113,8 @@ export async function reviewStagedChanges(deps: AppDeps): Promise<void> {
     return;
   } finally {
     deps.cancellation.end(controller);
+    // 成功、失败、取消都会走到这里：运行态必须复位，否则面板按钮永远禁用
+    deps.review.setRunning(false);
   }
 
   if (!outcome?.result) {

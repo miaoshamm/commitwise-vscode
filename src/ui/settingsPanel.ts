@@ -261,6 +261,10 @@ export class SettingsPanel {
         case 'resetSection':
           await this.resetSection(msg.section, msg.keys ?? []);
           return;
+        case 'dirtyChanged':
+          // dirty 状态同步到标题：● 与编辑器未保存文件同款语言，关页前最后一眼能看到
+          this.panel.title = msg.dirty > 0 ? '● CommitCraft 设置' : 'CommitCraft 设置';
+          return;
         case 'saveKey':
           await this.saveKey(msg.provider, msg.key);
           return;
@@ -335,10 +339,36 @@ export class SettingsPanel {
   }
 
   private async resetSection(section: string, keys: string[]): Promise<void> {
+    const label = SETTINGS_SECTIONS.find((s) => s.id === section)?.label ?? section;
     const cfg = vscode.workspace.getConfiguration(CONFIG_SECTION);
-    let count = 0;
+
+    // 恢复是立即落盘的操作：先记录全局层旧值，确认后执行，并支持一键撤销
+    const undoEntries: Array<[string, unknown]> = [];
     for (const key of keys) {
       const short = String(key).replace(`${SECTION}.`, '');
+      const inspected = cfg.inspect(short);
+      if (!inspected) {
+        continue;
+      }
+      undoEntries.push([short, inspected.globalValue]);
+    }
+    if (undoEntries.length === 0) {
+      void this.panel.webview.postMessage({ type: 'toast', level: 'warn', message: '当前分区没有可恢复的设置项' });
+      return;
+    }
+
+    const confirm = await vscode.window.showWarningMessage(
+      `将把「${label}」分区的 ${undoEntries.length} 项设置恢复为默认值，立即写入全局配置。`,
+      { modal: true },
+      '恢复默认',
+    );
+    if (confirm !== '恢复默认') {
+      void this.panel.webview.postMessage({ type: 'toast', level: 'warn', message: '已取消，没有修改任何设置' });
+      return;
+    }
+
+    let count = 0;
+    for (const [short] of undoEntries) {
       const inspected = cfg.inspect(short);
       if (!inspected) {
         continue;
@@ -349,6 +379,16 @@ export class SettingsPanel {
     this.deps.logger.info(`设置页恢复默认：${section} 共 ${count} 项`);
     const state = await this.buildState();
     void this.panel.webview.postMessage({ type: 'saved', state, changed: count, resetSection: section });
+
+    const undo = await vscode.window.showInformationMessage(`已恢复「${label}」分区默认值。`, '撤销恢复');
+    if (undo === '撤销恢复') {
+      for (const [short, value] of undoEntries) {
+        await cfg.update(short, value, TARGET);
+      }
+      this.deps.logger.info(`已撤销「${label}」分区的恢复操作`);
+      const restored = await this.buildState();
+      void this.panel.webview.postMessage({ type: 'saved', state: restored, changed: undoEntries.length, resetSection: section, undo: true });
+    }
   }
 
   private async saveKey(provider: string, key: string): Promise<void> {
@@ -497,7 +537,7 @@ export class SettingsPanel {
   </div>
 
   <footer class="footer">
-    <button class="ghost small" id="btn-reset">恢复本页默认</button>
+    <button class="ghost small" id="btn-reset" title="把当前分区的设置恢复为默认值（有确认，可撤销）">恢复当前分区默认</button>
     <div class="spacer"></div>
     <span class="dirty" id="dirty"></span>
     <button class="primary" id="btn-save" disabled>${ICON_SAVE}<span>保存</span></button>
@@ -928,6 +968,38 @@ button svg { width: 13px; height: 13px; }
 }
 .hint-inline { font-size: 11.5px; color: var(--vscode-editorWarning-foreground, #d29922); margin: 8px 0 0; line-height: 1.55; }
 .hint-line { font-size: 11.5px; color: var(--vscode-descriptionForeground); margin: 6px 0 0; line-height: 1.55; }
+
+/* 清除搜索：空态里的内联文字按钮 */
+.link-btn {
+  background: none; border: none; padding: 0 4px; cursor: pointer;
+  font: inherit; color: var(--vscode-textLink-foreground);
+  text-decoration: underline;
+}
+.link-btn:hover { color: var(--vscode-textLink-activeForeground); }
+
+/* 键盘焦点可见性：Tab 巡航时所有交互元素都能看到焦点位置 */
+button:focus-visible,
+.nav-item:focus-visible,
+.card:focus-visible,
+.combo-item:focus-visible,
+.combo-toggle:focus-visible,
+.icon-btn:focus-visible,
+.link-btn:focus-visible,
+.mini:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
+
+/* 窄面板（侧边栏同列、小窗）：搜索框收缩、settings.json 文字隐藏 */
+@media (max-width: 640px) {
+  .search { flex: 1 1 140px; min-width: 0; }
+  .icon-btn span { display: none; }
+  .icon-btn { padding: 0 6px; }
+}
+@media (max-width: 560px) {
+  .row { grid-template-columns: 1fr; gap: 6px; }
+  .row-text { min-width: 0; }
+}
 `;
 
 /* ------------------------------------------------------------------ 前端脚本 */
@@ -964,6 +1036,8 @@ let keyInput = '';
 let keyBusy = false;
 let advOpen = false;      // 「更多选项」的展开状态（重绘后需要还原）
 let modelOpen = false;    // 模型下拉是否展开（重绘后需要还原）
+let lastDirtyPosted = -1; // 上次上报给宿主的 dirty 数（标题 ● 标记用）
+let dirtyTipShown = false;
 
 const $ = (id) => document.getElementById(id);
 const esc = (v) => String(v == null ? '' : v)
@@ -1024,13 +1098,27 @@ function fieldInvalid(key) {
   const meta = fieldMap()[key];
   if (!meta) return '';
   const f = meta.field;
-  if (f.type !== 'number') return '';
-  const raw = draft[key];
-  if (raw === '' || raw == null) return '不能为空';
-  const n = Number(raw);
-  if (!Number.isFinite(n)) return '需要填数字';
-  if (f.min != null && n < f.min) return '不能小于 ' + f.min;
-  if (f.max != null && n > f.max) return '不能大于 ' + f.max;
+  if (f.type === 'number') {
+    const raw = draft[key];
+    if (raw === '' || raw == null) return '不能为空';
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return '需要填数字';
+    if (f.min != null && n < f.min) return '不能小于 ' + f.min;
+    if (f.max != null && n > f.max) return '不能大于 ' + f.max;
+    return '';
+  }
+  // 接口地址即时校验：必须 http/https 且可解析。input 事件里跳过实时红框
+  // （用户正在粘贴时不要打断），blur / 保存按钮 disabled 时仍会读这里。
+  if (key === 'commitCraft.baseUrl') {
+    const v = String(draft[key] || '').trim();
+    if (!v) return '接口地址不能为空';
+    try {
+      const u = new URL(v);
+      if (u.protocol !== 'http:' && u.protocol !== 'https:') return '必须以 http:// 或 https:// 开头';
+    } catch {
+      return '不是合法的 URL';
+    }
+  }
   return '';
 }
 
@@ -1175,7 +1263,7 @@ function renderModelSection() {
     ? '<div class="combo-empty">' + (modelsLoading
         ? '正在获取模型列表…'
         : '还没有模型列表。点右侧「获取模型」拉取，或在下方直接输入模型名。') + '</div>'
-    : pickables.map(m => '<button type="button" class="combo-item' + (m.id === currentModel ? ' on' : '')
+    : pickables.map((m, i) => '<button type="button" id="ccmi-' + i + '" class="combo-item' + (m.id === currentModel ? ' on' : '')
         + '" data-model="' + esc(m.id) + '" role="option" aria-selected="' + (m.id === currentModel) + '">'
         + '<span class="ci-name">' + esc(m.id) + '</span>'
         + (m.note ? '<span class="ci-note">' + esc(m.note) + '</span>' : '')
@@ -1272,7 +1360,7 @@ function renderSearch() {
       (f.label + ' ' + (f.description || '') + ' ' + f.key).toLowerCase().indexOf(q) >= 0);
     if (rows.length) hits.push({ sec, rows });
   }
-  if (!hits.length) return '<div class="empty">没有匹配「' + esc(query) + '」的设置项。</div>';
+  if (!hits.length) return '<div class="empty">没有匹配「' + esc(query) + '」的设置项。<button type="button" class="link-btn" id="btn-clear-search">清除搜索</button></div>';
   return hits.map(h => '<div class="grid-title">' + esc(h.sec.label) + '</div>'
     + '<div class="panel">' + h.rows.map(f => renderRow(f.key)).join('') + '</div>').join('');
 }
@@ -1305,6 +1393,15 @@ function renderFooter() {
   $('dirty').textContent = n ? (invalid ? '有 ' + n + ' 项待保存（其中含无效值）' : '有 ' + n + ' 项未保存') : '';
   $('btn-save').disabled = n === 0 || invalid;
   $('btn-reset').disabled = false;
+  // dirty 变化上报宿主：标题出现 ●，首次变脏时提醒一次「直接关闭会丢失」
+  if (n !== lastDirtyPosted) {
+    lastDirtyPosted = n;
+    vscode.postMessage({ type: 'dirtyChanged', dirty: n });
+    if (n > 0 && !dirtyTipShown) {
+      dirtyTipShown = true;
+      toast('改动尚未保存：Ctrl+S 保存，或点底部「保存」；直接关闭页面会丢失改动', 'warn');
+    }
+  }
 }
 
 function render() {
@@ -1349,6 +1446,7 @@ function toggleModelPop(force) {
   try { input.setSelectionRange(end, end); } catch (err) { /* 老 webview 不支持就忽略 */ }
   const on = document.querySelector('#model-pop .combo-item.on');
   if (on && on.scrollIntoView) on.scrollIntoView({ block: 'nearest' });
+  syncModelActiveAttr();
 }
 
 function pickModel(id) {
@@ -1378,8 +1476,24 @@ function filterModelList(q) {
   } else if (shown && existing) {
     existing.remove();
   }
+  // 过滤后，active 项可能被隐藏：清掉并同步 aria-activedescendant
   for (const el of pop.querySelectorAll('.combo-item.active')) {
-    if (el.hidden) el.classList.remove('active');
+    if (el.hidden) {
+      el.classList.remove('active');
+      syncModelActiveAttr();
+    }
+  }
+}
+
+/** 把 input 的 aria-activedescendant 指向当前 active 项；屏幕阅读器据此播报 */
+function syncModelActiveAttr() {
+  const input = $('model-input');
+  if (!input) return;
+  const act = document.querySelector('#model-pop .combo-item.active');
+  if (act instanceof HTMLElement && act.id) {
+    input.setAttribute('aria-activedescendant', act.id);
+  } else {
+    input.removeAttribute('aria-activedescendant');
   }
 }
 
@@ -1388,7 +1502,10 @@ function moveModelActive(delta) {
     document.querySelectorAll('#model-pop .combo-item'),
     el => !el.hidden,
   );
-  if (!items.length) return;
+  if (!items.length) {
+    syncModelActiveAttr();
+    return;
+  }
   let idx = items.findIndex(el => el.classList.contains('active'));
   if (idx < 0) {
     const onIdx = items.findIndex(el => el.classList.contains('on'));
@@ -1399,9 +1516,16 @@ function moveModelActive(delta) {
   const next = items[idx];
   next.classList.add('active');
   if (next.scrollIntoView) next.scrollIntoView({ block: 'nearest' });
+  syncModelActiveAttr();
 }
 
 document.addEventListener('keydown', (e) => {
+  // Ctrl/Cmd+S：与底部保存按钮等价（保存前宿主还会做一次校验）
+  if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
+    e.preventDefault();
+    if (dirty.size > 0 && !$('btn-save').disabled) save();
+    return;
+  }
   if (e.target && e.target.id === 'model-input') {
     if (e.key === 'Escape') {
       if (modelOpen) { modelOpen = false; render(); }
@@ -1413,6 +1537,23 @@ document.addEventListener('keydown', (e) => {
       moveModelActive(e.key === 'ArrowDown' ? 1 : -1);
       return;
     }
+    // Home/End：跳到列表首/尾，便于长列表快速浏览
+    if ((e.key === 'Home' || e.key === 'End') && modelOpen) {
+      e.preventDefault();
+      const items = Array.prototype.filter.call(
+        document.querySelectorAll('#model-pop .combo-item'),
+        el => !el.hidden,
+      );
+      if (!items.length) return;
+      for (const el of items) el.classList.remove('active');
+      const target = e.key === 'Home' ? items[0] : items[items.length - 1];
+      target.classList.add('active');
+      if (target.scrollIntoView) target.scrollIntoView({ block: 'nearest' });
+      syncModelActiveAttr();
+      return;
+    }
+    // Tab：合上下拉让焦点自然跳走，不强行阻止默认导航
+    if (e.key === 'Tab' && modelOpen) { modelOpen = false; render(); return; }
     if (e.key === 'Enter' && modelOpen) {
       const act = document.querySelector('#model-pop .combo-item.active')
         || document.querySelector('#model-pop .combo-item.on');
@@ -1435,6 +1576,8 @@ document.addEventListener('click', (e) => {
 
   const nav = e.target.closest('.nav-item');
   if (nav) { active = nav.dataset.section; query = ''; $('search').value = ''; render(); $('content').scrollTop = 0; return; }
+
+  if (e.target.closest('#btn-clear-search')) { query = ''; $('search').value = ''; render(); $('search').focus(); return; }
 
   const revert = e.target.closest('[data-revert]');
   if (revert) {
@@ -1497,7 +1640,9 @@ document.addEventListener('input', (e) => {
   renderFooter();
   const row = el.closest('.row');
   if (row) {
-    const bad = fieldInvalid(key);
+    // URL 实时校验太吵（用户正在粘贴 / 输到一半协议前缀），blur 时再红框
+    const liveCheck = key !== 'commitCraft.baseUrl';
+    const bad = liveCheck ? fieldInvalid(key) : '';
     row.classList.toggle('invalid', !!bad);
     let warn = row.querySelector('.field-error');
     if (bad) {
@@ -1545,6 +1690,31 @@ document.addEventListener('change', (e) => {
     vscode.postMessage({ type: 'queryKey', provider: next });
   }
   render();
+});
+
+// 失焦校验：URL 等文本字段在 input 事件里被跳过实时红框，blur 时一次性给反馈
+document.addEventListener('focusout', (e) => {
+  const el = e.target;
+  if (!el || !el.dataset) return;
+  const key = el.dataset.key;
+  if (key !== 'commitCraft.baseUrl') return;
+  const row = el.closest('.row');
+  if (!row) return;
+  const bad = fieldInvalid(key);
+  row.classList.toggle('invalid', !!bad);
+  let warn = row.querySelector('.field-error');
+  if (bad) {
+    if (!warn) {
+      warn = document.createElement('div');
+      warn.className = 'row-caution field-error';
+      const text = row.querySelector('.row-text');
+      if (text) text.appendChild(warn);
+      else row.appendChild(warn);
+    }
+    warn.textContent = bad;
+  } else if (warn) {
+    warn.remove();
+  }
 });
 
 function collect() {
@@ -1631,7 +1801,8 @@ window.addEventListener('message', (e) => {
       for (const sec of S.schema.sections) for (const f of sec.fields) draft[f.key] = toText(f, S.values[f.key]);
       models = S.meta.models || models;
       render();
-      if (msg.resetSection) toast('已恢复「' + (S.schema.sections.find(s => s.id === msg.resetSection) || {}).label + '」的默认值', 'ok');
+      if (msg.undo) toast('已撤销恢复，「' + (S.schema.sections.find(s => s.id === msg.resetSection) || {}).label + '」的设置已还原', 'ok');
+      else if (msg.resetSection) toast('已恢复「' + (S.schema.sections.find(s => s.id === msg.resetSection) || {}).label + '」的默认值', 'ok');
       else if (msg.changed > 0) toast('已保存 ' + msg.changed + ' 项设置', 'ok');
       else toast('没有需要保存的改动', 'warn');
       if (msg.warnings && msg.warnings.length) toast(msg.warnings[0], 'warn');
