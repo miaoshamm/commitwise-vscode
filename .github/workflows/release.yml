@@ -11,7 +11,7 @@ name: Release
 #
 # 需要的 Secret：
 #   VSCE_PAT  必填，Visual Studio Marketplace 的 Azure DevOps PAT（Marketplace → Manage）
-#   OVSX_PAT  可选，Open VSX 访问令牌；没有就跳过 Open VSX
+#   OVSX_PAT  可选，Open VSX 访问令牌；配置后自动多推一个渠道（命名空间不存在会自动创建）
 #   GITHUB_TOKEN 自动提供，用于创建 Release（需要本文件声明的 contents: write）
 
 on:
@@ -70,12 +70,20 @@ jobs:
         if: github.event_name == 'push' || inputs.publish
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
         run: |
           if [ -z "$VSCE_PAT" ]; then
             echo "::error::缺少 Secret VSCE_PAT。获取方式：https://dev.azure.com → User settings → Personal access tokens，Scope 选 Marketplace → Manage（Organization 选 All accessible organizations，且组织需已启用 Marketplace）；发布者 miaosha-ikio 需已在 https://marketplace.visualstudio.com/manage 创建。"
             exit 1
           fi
-          echo "VSCE_PAT 已配置。"
+          echo "VSCE_PAT 已配置（Visual Studio Marketplace）"
+          if [ -n "$OVSX_PAT" ]; then
+            echo "OVSX_PAT 已配置（Open VSX）"
+            echo "- Open VSX：已启用" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "OVSX_PAT 未配置，将只发 Visual Studio Marketplace"
+            echo "- Open VSX：跳过（无 OVSX_PAT）" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Resolve version
         id: version
@@ -142,6 +150,31 @@ jobs:
       - name: Verify (icons / types / unit tests / build / smoke / e2e)
         run: npm run verify
 
+      - name: Ensure Open VSX namespace
+        id: ovsx
+        # 与发布同频：dry run（publish=false）不去动 registry
+        if: github.event_name == 'push' || inputs.publish
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: |
+          set -euo pipefail
+          if [ -z "${OVSX_PAT:-}" ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "未配置 OVSX_PAT，跳过 Open VSX"
+            exit 0
+          fi
+          OVSX=./node_modules/.bin/ovsx
+          NAME=$(node -p "require('./package.json').publisher")
+          CODE=$(curl -s -o /dev/null -w '%{http_code}' "https://open-vsx.org/api/-/namespace/${NAME}")
+          if [ "$CODE" = "200" ]; then
+            echo "命名空间 ${NAME} 已存在"
+          else
+            echo "命名空间 ${NAME} 不存在（HTTP ${CODE}），尝试创建…"
+            "$OVSX" create-namespace "$NAME" -p "$OVSX_PAT"
+          fi
+          "$OVSX" verify-pat "$NAME" -p "$OVSX_PAT"
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
+
       - name: Package & publish
         id: publish
         env:
@@ -186,6 +219,7 @@ jobs:
         env:
           VERSION: ${{ steps.version.outputs.version }}
           VSIX_NAME: ${{ steps.vsix.outputs.name }}
+          OVSX_ENABLED: ${{ steps.ovsx.outputs.enabled }}
         run: |
           set -euo pipefail
           {
@@ -198,7 +232,9 @@ jobs:
             echo "下载下方 \`.vsix\`，或在 VSCode 扩展面板搜索 **CommitWise**："
             echo
             echo "- Marketplace：<https://marketplace.visualstudio.com/items?itemName=miaosha-ikio.commitwise>"
-            echo "- Open VSX：<https://open-vsx.org/extension/miaosha-ikio/commitwise>"
+            if [ "${OVSX_ENABLED}" = "true" ]; then
+              echo "- Open VSX（VSCodium / 国产 IDE）：<https://open-vsx.org/extension/miaosha-ikio/commitwise>"
+            fi
             echo "- 本次产物：\`${VSIX_NAME}\`（版本 ${VERSION}）"
             echo
             echo '```bash'

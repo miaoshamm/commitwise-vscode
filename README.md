@@ -229,7 +229,7 @@ npm run release:vsix # 只产出 .vsix
 | 变量 | 用途 | 获取 |
 | --- | --- | --- |
 | `VSCE_PAT` | Visual Studio Marketplace | [Azure DevOps](https://dev.azure.com) → Personal access tokens，Scope 选 Marketplace → Manage；发布者需先在 [manage 页面](https://marketplace.visualstudio.com/manage) 创建 |
-| `OVSX_PAT` | [Open VSX](https://open-vsx.org)（VSCodium / 国产 IDE） | [访问令牌](https://open-vsx.org/user-settings/tokens)，命名空间需先创建 |
+| `OVSX_PAT` | [Open VSX](https://open-vsx.org)（VSCodium / 国产 IDE） | [访问令牌](https://open-vsx.org/user-settings/tokens)；命名空间不存在时工作流会自动创建 |
 
 ```bash
 VSCE_PAT=xxx OVSX_PAT=yyy npm run release
@@ -253,14 +253,20 @@ git tag v0.5.1 && git push origin main --tags
 两条硬性规则（CI 会先拦下，给出具体原因）：
 
 - tag 必须与 `package.json` 的 `version` 完全一致；
-- 版本号必须是 Marketplace 上还没有的新版本，否则 `scripts/publish.js` 的 `checkRemote` 会直接失败——已发布版本不可覆盖，只能升版本号。
+- 版本号必须是**两个渠道都还没有**的新版本。已发布版本不可覆盖，所以脚本按渠道分别判定：某个渠道已有这个版本就跳过它，只发还缺的那个（例如 Marketplace 发过、Open VSX 漏发，直接补发即可，不必为了同步而硬升一个空版本）；两个渠道都有才报错并提示升版本号。
+
+只想补发某一个渠道：
+
+```bash
+node scripts/publish.js --target openvsx      # 或 --target marketplace
+```
 
 需要在 **Settings → Secrets and variables → Actions** 配置：
 
 | Secret | 必填 | 用途与获取方式 |
 | --- | --- | --- |
 | `VSCE_PAT` | **是** | Azure DevOps Personal Access Token，见下方步骤 |
-| `OVSX_PAT` | 否 | [open-vsx.org 访问令牌](https://open-vsx.org/user-settings/tokens)，不配就跳过 Open VSX |
+| `OVSX_PAT` | 否 | [open-vsx.org 访问令牌](https://open-vsx.org/user-settings/tokens)，不配就只发 Marketplace；配了之后命名空间 `miaosha-ikio` 不存在会自动创建并校验发布权限 |
 | `GITHUB_TOKEN` | 自动 | 创建 Release 用，workflow 里已声明 `permissions: contents: write` |
 
 `VSCE_PAT` 是最容易卡住的一步，四步拿到：

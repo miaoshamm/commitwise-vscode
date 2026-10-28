@@ -7,11 +7,16 @@
  *   node scripts/publish.js --dry-run              检查 + 校验 + 打包，但不推送
  *   node scripts/publish.js --pre-release          推送到 Marketplace 预发布渠道
  *   node scripts/publish.js                        正式发布（Marketplace + Open VSX）
+ *   node scripts/publish.js --target marketplace   只发 Marketplace
+ *   node scripts/publish.js --target openvsx       只发 Open VSX（可用于补发漏掉的渠道）
  *   node scripts/publish.js --target vsix          只产出 .vsix
+ *
+ * 每个渠道单独判定：该版本已在某渠道存在就跳过它，只发还缺的那个；
+ * 两个渠道都有该版本才报错（通常意味着忘了升版本号）。
  *
  * 令牌（不要写进任何文件，只放环境变量）：
  *   VSCE_PAT   Azure DevOps PAT，需 Marketplace → Manage 权限
- *   OVSX_PAT   open-vsx.org 访问令牌
+ *   OVSX_PAT   open-vsx.org 访问令牌（可选，未配置则跳过 Open VSX）
  */
 'use strict';
 
@@ -95,6 +100,11 @@ const PRE_RELEASE = flags.has('--pre-release');
 const TARGET = valueOf('target', 'all');
 const SKIP_VERIFY = flags.has('--skip-verify');
 const SKIP_DUPLICATE = flags.has('--skip-duplicate') || true; // 幂等：同版本重复推送不视为失败
+
+if (!['all', 'marketplace', 'openvsx', 'vsix'].includes(TARGET)) {
+  console.error(`--target 只支持 all / marketplace / openvsx / vsix，收到「${TARGET}」`);
+  process.exit(1);
+}
 
 /* -------------------------------------------------------------- §6.2 检查项 */
 
@@ -316,31 +326,62 @@ function httpsJson(method, url, body) {
   });
 }
 
-async function checkRemote() {
-  step('远端状态');
+const TARGET_LABEL = { marketplace: 'Marketplace', openvsx: 'Open VSX' };
+const TARGET_ENV = { marketplace: 'VSCE_PAT', openvsx: 'OVSX_PAT' };
+const TARGET_URL = {
+  marketplace: () => `https://marketplace.visualstudio.com/items?itemName=${pkg.publisher}.${pkg.name}`,
+  openvsx: () => `https://open-vsx.org/extension/${pkg.publisher}/${pkg.name}`,
+};
+const label = (t) => TARGET_LABEL[t] || t;
+
+async function marketplaceState() {
   const payload = {
     filters: [{ criteria: [{ filterType: 7, value: `${pkg.publisher}.${pkg.name}` }], pageNumber: 1, pageSize: 1, sortBy: 0, sortOrder: 0 }],
     flags: 0x1 | 0x2 | 0x80,
   };
   const res = await httpsJson('POST', 'https://marketplace.visualstudio.com/_apis/public/gallery/extensionquery', payload);
-  if (!res || !res.json) {
-    warn('连不上 Marketplace 查询接口（离线或被墙），跳过占用检查');
-    return;
-  }
+  if (!res || !res.json) return { reachable: false };
   const ext = res.json.results && res.json.results[0] && res.json.results[0].extensions && res.json.results[0].extensions[0];
-  if (!ext) {
-    info(`Marketplace 上还没有 ${pkg.publisher}.${pkg.name}，这将是首次发布`);
-    return;
+  if (!ext) return { reachable: true, exists: false, versions: [] };
+  const versions = (ext.versions || []).map((v) => v.version).filter(Boolean);
+  return { reachable: true, exists: true, versions, latest: versions[0] };
+}
+
+async function openvsxState() {
+  const res = await httpsJson('GET', `https://open-vsx.org/api/${pkg.publisher}/${pkg.name}`);
+  if (!res) return { reachable: false };
+  if (res.status === 404) return { reachable: true, exists: false, versions: [] };
+  if (!res.json) return { reachable: false };
+  const all = res.json.allVersions ? Object.keys(res.json.allVersions) : [];
+  const versions = all.length ? all : [res.json.version].filter(Boolean);
+  return { reachable: true, exists: true, versions, latest: res.json.version };
+}
+
+/** 同时查两个渠道：谁已有这个版本、谁还没有 */
+async function remoteState() {
+  step('远端状态');
+  const [marketplace, openvsx] = await Promise.all([marketplaceState(), openvsxState()]);
+  const state = { marketplace, openvsx };
+  for (const key of ['marketplace', 'openvsx']) {
+    const s = state[key];
+    if (!s.reachable) warn(`${label(key)}：查询失败（离线或被墙），按「没发过」处理`);
+    else if (!s.exists) info(`${label(key)}：还没有 ${pkg.publisher}.${pkg.name}，将是首次发布`);
+    else ok(`${label(key)}：已存在，${s.versions.length} 个版本，最新 ${s.latest || '—'}`);
   }
-  const versions = (ext.versions || []).map((v) => v.version);
-  ok(`已存在：${ext.publisher.publisherName}/${ext.extensionName}，${versions.length} 个版本，最新 ${versions[0] || '—'}`);
-  if (versions.includes(pkg.version)) {
-    const detail = `Marketplace 上已有 ${pkg.version}，已发布版本不可覆盖，请先升版本号（npm version patch|minor）`;
-    add('blocker', '版本占用', detail);
-    fail(detail);
-    return false;
-  }
-  return true;
+  return state;
+}
+
+/**
+ * 每个渠道单独判定：已发过这个版本就跳过，没发过就发布。
+ * 这样「Marketplace 已发、Open VSX 漏发」时补发即可，不必为了同步渠道而硬升一个空版本。
+ */
+function planPublish(state) {
+  const want = TARGET === 'all' ? ['marketplace', 'openvsx'] : [TARGET];
+  return want.map((target) => {
+    const s = state[target];
+    const occupied = !!(s && s.exists && s.versions.includes(pkg.version));
+    return { target, occupied };
+  });
 }
 
 /* ------------------------------------------------------------ 构建与打包 */
@@ -410,7 +451,7 @@ function publishMarketplace(vsix) {
     return false;
   }
   ok('已推送');
-  info(`https://marketplace.visualstudio.com/items?itemName=${pkg.publisher}.${pkg.name}`);
+  info(TARGET_URL.marketplace());
   return true;
 }
 
@@ -418,19 +459,19 @@ function publishOpenVsx(vsix) {
   const token = process.env.OVSX_PAT;
   if (!token) {
     warn('缺少 OVSX_PAT，跳过 Open VSX（VSCodium / 国产 IDE 走这个源）');
-    info('令牌：https://open-vsx.org/user-settings/tokens；发布者命名空间需先创建');
+    info('令牌：https://open-vsx.org/user-settings/tokens；首次发布前命名空间需存在');
     return false;
   }
-  step('推送到 Open VSX');
+  step(`推送到 Open VSX${PRE_RELEASE ? '（预发布渠道）' : ''}`);
   const args = ['publish', vsix, '-p', token];
   if (PRE_RELEASE) args.push('--pre-release');
   const res = run(bin('ovsx'), args, { allowFail: true });
   if (res.status !== 0) {
-    fail('Open VSX 推送失败');
+    fail('Open VSX 推送失败：常见原因是命名空间不存在（https://open-vsx.org/user-settings/namespaces）或令牌无该命名空间权限');
     return false;
   }
   ok('已推送');
-  info(`https://open-vsx.org/extension/${pkg.publisher}/${pkg.name}`);
+  info(TARGET_URL.openvsx());
   return true;
 }
 
@@ -461,8 +502,48 @@ function publishOpenVsx(vsix) {
     process.exit(1);
   }
 
-  const remoteOk = await checkRemote();
-  if (remoteOk === false) process.exit(1);
+  const willPublish = MODE === 'publish' && TARGET !== 'vsix';
+  const state = await remoteState();
+
+  // 只在真的要发布时才按渠道做占用判定与令牌校验
+  const pending = [];
+  const active = [];
+  if (willPublish) {
+    for (const item of planPublish(state)) {
+      if (item.occupied) {
+        info(`${label(item.target)} 已有 ${pkg.version}，跳过`);
+        continue;
+      }
+      pending.push(item.target);
+      if (!process.env[TARGET_ENV[item.target]]) {
+        // Open VSX 是可选的第二个渠道：未配令牌时跳过，其它渠道缺令牌直接失败
+        if (item.target === 'openvsx' && TARGET === 'all') {
+          warn(`缺少 OVSX_PAT，跳过 ${label(item.target)}（VSCodium / 国产 IDE 走这个源）`);
+          continue;
+        }
+        fail(`缺少 ${TARGET_ENV[item.target]}，无法推送到 ${label(item.target)}`);
+        process.exit(1);
+      }
+      active.push(item.target);
+    }
+
+    if (!pending.length) {
+      if (TARGET === 'all') {
+        fail(`Marketplace 与 Open VSX 都已有 ${pkg.version}，没有可发布的渠道`);
+        console.log(`  ${C.dim}确实要发新版本的话先升版本号：npm version patch（或 minor / major）${C.reset}`);
+        process.exit(1);
+      }
+      ok(`${label(TARGET)} 已有 ${pkg.version}，无需重复发布`);
+      process.exit(0);
+    }
+
+    if (!active.length) {
+      step('跳过发布');
+      warn(`待发渠道（${pending.map(label).join('、')}）缺少令牌，本次不推送`);
+      info('配好令牌后可用 --target 单独补发，或直接在 CI 里配置对应 Secret');
+      process.exit(0);
+    }
+  }
 
   if (!SKIP_VERIFY) runVerify();
   else warn('已跳过 verify（--skip-verify）');
@@ -471,22 +552,25 @@ function publishOpenVsx(vsix) {
   const vsix = packageVsix();
   listVsix(vsix);
 
-  if (MODE === 'dry-run' || TARGET === 'vsix') {
+  if (!willPublish) {
     step('完成');
     ok(`产物：${path.basename(vsix)}（--dry-run / --target vsix，未推送远端）`);
     process.exit(0);
   }
 
-  let any = false;
-  if (TARGET === 'all' || TARGET === 'marketplace') any = publishMarketplace(vsix) || any;
-  if (TARGET === 'all' || TARGET === 'openvsx') any = publishOpenVsx(vsix) || any;
+  const failed = [];
+  if (active.includes('marketplace') && !publishMarketplace(vsix)) failed.push('marketplace');
+  if (active.includes('openvsx') && !publishOpenVsx(vsix)) failed.push('openvsx');
 
-  step(any ? '发布完成' : '发布未完成');
-  if (!any) {
-    console.log(`  ${C.yellow}本地产物已就绪：${path.basename(vsix)}${C.reset}`);
-    console.log(`  ${C.dim}设置环境变量后重跑：VSCE_PAT=xxx OVSX_PAT=yyy npm run release${C.reset}`);
-    process.exit(2);
+  if (failed.length) {
+    step('发布未完成');
+    fail(`${failed.map(label).join('、')} 推送失败，其余渠道${failed.length < active.length ? '已成功' : '未执行'}`);
+    console.log(`  ${C.yellow}本地产物可用于手动补发：${path.basename(vsix)}${C.reset}`);
+    process.exit(1);
   }
+
+  step('发布完成');
+  for (const t of active) ok(`${label(t)} → ${TARGET_URL[t]()}`);
   process.exit(0);
 })().catch((err) => {
   console.error(`\n${C.red}流水线中断：${err.message}${C.reset}`);
