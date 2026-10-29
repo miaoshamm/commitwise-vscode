@@ -1,5 +1,7 @@
 # CommitCraft
 
+> 官网：<https://commitwise.aikio.blog/> · [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=miaosha-ikio.commitwise) · [Open VSX](https://open-vsx.org/extension/miaosha-ikio/commitwise) · [JetBrains Marketplace](https://plugins.jetbrains.com/plugin/35543-commitwise)
+
 读取 **Git 暂存区**的变更，用你自己配置的大模型生成规范的 commit message，并对暂存区代码做一次提交前审查。
 
 - 只看暂存区：`git add` 了什么就分析什么，不读未暂存改动
@@ -9,6 +11,17 @@
 - 提示词可改：内置 6 套模板，也可自定义，模板能写进 `.vscode/settings.json` 随仓库共享
 - 审查有地方看：侧边栏清单 + 详细报告面板 + 状态栏计数，关掉面板还能重新打开
 - 绝不自动提交：只写入源代码管理输入框，写前备份原草稿，一条命令可恢复
+
+## 安装
+
+| 渠道 | 适合 | 怎么装 |
+|---|---|---|
+| [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=miaosha-ikio.commitwise) | VS Code | 扩展面板搜 **CommitWise**，或 `code --install-extension miaosha-ikio.commitwise` |
+| [Open VSX](https://open-vsx.org/extension/miaosha-ikio/commitwise) | Cursor / VSCodium / 其他基于 Open VSX 的 IDE | 扩展面板搜 **CommitWise**；或 `ovsx get miaosha-ikio.commitwise` |
+| 离线 `.vsix` | 内网、锁定版本 | 从 [Releases](https://github.com/miaoshamm/commitwise-vscode/releases) 下载，`code --install-extension ./commitwise-x.y.z.vsix` |
+| [JetBrains Marketplace](https://plugins.jetbrains.com/plugin/35543-commitwise) | IntelliJ IDEA / WebStorm 等 | 到 [commitwise-idea](https://github.com/miaoshamm/commitwise-idea) 看 IDEA 版说明 |
+
+更多截图、配置示例与常见问题见官网 <https://commitwise.aikio.blog/>。
 
 ## 快速开始
 

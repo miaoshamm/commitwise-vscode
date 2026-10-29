@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.2
+
+官方站点上线，商店里的入口统一指向官网。
+
+### 文档
+
+- `homepage` 改为 <https://commitwise.aikio.blog/>，VS Marketplace / Open VSX 详情页的 Website 链接随之上线。
+- README 新增「安装」章节：Marketplace、Open VSX（Cursor / VSCodium）、离线 `.vsix`、JetBrains Marketplace 四种渠道，并补官网入口。
+- Open VSX 命名空间 `miaosha-ikio` 已完成所有权验证，扩展在 Open VSX 上标记为 verified。
+
 ## 0.5.1
 
 把发版从「本地手动敲命令」变成「推个 tag 就完事」。
