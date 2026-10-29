@@ -165,14 +165,29 @@ jobs:
           fi
           OVSX=./node_modules/.bin/ovsx
           NAME=$(node -p "require('./package.json').publisher")
-          CODE=$(curl -s -o /dev/null -w '%{http_code}' "https://open-vsx.org/api/-/namespace/${NAME}")
-          if [ "$CODE" = "200" ]; then
-            echo "命名空间 ${NAME} 已存在"
+
+          # 判断命名空间是否存在，不能用 /api/-/namespace/{name}：
+          # 那个接口对匿名请求一律返回 404，会把「已存在」误判成「不存在」。
+          # 以 verify-pat 为准 —— 它能同时验「命名空间存在」和「令牌有发布权限」。
+          if "$OVSX" verify-pat "$NAME" -p "$OVSX_PAT" > /tmp/verify-pat.log 2>&1; then
+            echo "命名空间 ${NAME} 已存在，令牌具备发布权限"
           else
-            echo "命名空间 ${NAME} 不存在（HTTP ${CODE}），尝试创建…"
-            "$OVSX" create-namespace "$NAME" -p "$OVSX_PAT"
+            echo "verify-pat 未通过，输出如下："
+            sed 's/^/    /' /tmp/verify-pat.log || true
+            echo "尝试创建命名空间 ${NAME}…"
+            if created=$("$OVSX" create-namespace "$NAME" -p "$OVSX_PAT" 2>&1); then
+              echo "命名空间 ${NAME} 已创建"
+              printf '%s\n' "$created" | sed 's/^/    /'
+            else
+              # 命名空间已存在（或已归属他人）时这里会失败，交给下面的 verify-pat 定论
+              echo "create-namespace 未成功，输出如下（已存在时属正常）："
+              printf '%s\n' "$created" | sed 's/^/    /'
+            fi
+            if ! "$OVSX" verify-pat "$NAME" -p "$OVSX_PAT"; then
+              echo "::error::令牌对命名空间 ${NAME} 没有发布权限。请确认 OVSX_PAT 属于该命名空间的 owner/contributor，且命名空间已在 https://github.com/EclipseFdn/open-vsx.org/issues 完成所有权验证。"
+              exit 1
+            fi
           fi
-          "$OVSX" verify-pat "$NAME" -p "$OVSX_PAT"
           echo "enabled=true" >> "$GITHUB_OUTPUT"
 
       - name: Package & publish
